@@ -64,24 +64,50 @@ prop_bindPartial2 bsA fdsA bsB fdsB =
     where
         off = fromIntegral $ BS.length bsA + BS.length bsB
 
+-- | Check that put followed by get returns the same value.
 prop_putGet :: Word32 -> Property
 prop_putGet w = Right w === runDecoder (runPut' $ putWord32host w) BS.empty (pullGet G.getWord32host)
 
+-- | Check that pushing the data as small chunks instead of one big one works.
 prop_putGetPartial :: Word32 -> Property
 prop_putGetPartial w =
     Done BS.empty 4 [] w === foldl (\p b -> pushData' (BS.pack [b]) [] p) (pullGet G.getWord32host) input
     where
         input = BS.unpack . runPut' $ putWord32host w
 
+-- | Check that we can pull a single file descriptor.
 prop_pullFd :: Fd -> Property
 prop_pullFd f = Right f === runDecoder' BS.empty [f] pullFd
 
+-- | Check that 'pullGetOffset' works as expected.
 prop_pullGetOffset :: BS.ByteString -> Property
 prop_pullGetOffset bs =
     forAll (choose (0, len)) $ \off ->
         Done (BS.drop (fromIntegral off) bs) off [] off === pushData' bs [] (pullSkipBytes off >> pullGetOffset)
     where
         len = fromIntegral $ BS.length bs
+
+-- | Check that 'pullRestart' will zero the offset.
+prop_pullRestart :: BS.ByteString -> Property
+prop_pullRestart bs =
+    Done BS.empty 0 [] bs
+    === pushData' bs [] (pullBytes (BS.length bs) <* pullRestart)
+
+-- | Check that 'pullAlign' correctly aligns the offset.
+prop_pullAlign :: BS.ByteString -> Property
+prop_pullAlign bs =
+    not (BS.null bs) ==>
+    forAll (choose (1, BS.length bs)) $ \align ->
+    forAll (choose (0, align       )) $ \readBytes  ->
+        let align' = if readBytes == 0 then 0 else align in
+        Done (BS.drop align' bs) (fromIntegral align') [] (BS.take readBytes bs)
+        === pushData' bs [] (pullBytes readBytes <* pullAlign (fromIntegral align))
+
+-- | Check that 'runDecoder' correctly parses a 'ByteString' as a list of file descriptors.
+prop_runDecoder :: BS.ByteString -> [Fd] -> Property
+prop_runDecoder bs fds =
+    Right (bs, fds)
+    === runDecoder bs (runPut' . mapM_ putWord32host $ map fromIntegral fds) pullRemaining
 
 return []
 decoderTests :: IO Bool

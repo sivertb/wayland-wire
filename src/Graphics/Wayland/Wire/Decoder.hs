@@ -74,7 +74,7 @@ instance Show a => Show (Decoder a) where
     show (Done bs off fds x  ) = printf "Done %s %s %s %s" (show bs) (show off) (show fds) (show x  )
     show (Partial _          ) = "Partial <func>"
     show (Offset  _          ) = "Offset <func>"
-    show (Restart _          ) = "Restart <func>"
+    show (Restart p          ) = "Restart (" ++ show p ++ ")"
 
 instance Functor Decoder where
     fmap f (Offset  g)         = Offset  (fmap f . g)
@@ -90,7 +90,7 @@ instance Applicative Decoder where
 instance Monad Decoder where
     return = Done BS.empty 0 []
 
-    (Restart p   )   >>= g = p >>= g
+    (Restart p   )   >>= g = Restart (p >>= g)
     (Offset  p   )   >>= g = Offset  ((>>= g) . p)
     (Partial p   )   >>= g = Partial ((>>= g) . p)
     (Fail b o f s)   >>= _ = Fail b o f s
