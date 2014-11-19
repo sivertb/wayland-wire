@@ -1,10 +1,13 @@
 import Control.Applicative
 import Control.Monad
 import System.Exit
-import Test.Decoder
+import Test.Get
+import Test.Wire
 
 tests :: [IO Bool]
-tests = [ decoderTests ]
+tests = [ getTests
+        , wireTests
+        ]
 
 main :: IO ()
 main = do
