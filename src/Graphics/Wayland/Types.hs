@@ -7,4 +7,4 @@ where
 import Data.Word
 
 type ObjId = Word32
-type OpCode = Word32
+type OpCode = Word16

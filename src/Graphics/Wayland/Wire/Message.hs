@@ -1,24 +1,25 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Graphics.Wayland.Wire.Message
     ( Message (..)
     , Argument (..)
-    , pullMsg
+    , getMsg
     , putMsg
-    , putCmsg
+    , Fixed
+    , fixedToDouble
+    , doubleToFixed
     )
 where
 
 import Control.Applicative
 import Control.Monad
-import Data.Binary.Get hiding (Decoder)
-import Data.Binary.Put
 import Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
-import Data.Maybe
 import Data.Int
 import Data.Word
 import Graphics.Wayland.Protocol hiding (Argument)
-import Graphics.Wayland.Wire.Decoder
+import Graphics.Wayland.Wire.Get
+import Graphics.Wayland.Wire.Put
 import qualified Graphics.Wayland.Protocol as P
 import Graphics.Wayland.Types
 import System.Posix
@@ -34,7 +35,7 @@ data Message =
 data Argument =
     ArgInt    Int32
   | ArgWord   Word32
-  | ArgFixed  Double
+  | ArgFixed  Fixed
   | ArgFd     Fd
   | ArgString (Maybe String)
   | ArgObject (Maybe ObjId)
@@ -42,66 +43,71 @@ data Argument =
   | ArgArray  [Word32]
   deriving (Show, Eq)
 
+newtype Fixed = Fixed { unFixed :: Int32 } deriving (Eq, Ord, Num, Real, Enum, Integral)
 
-pullWord32 :: Decoder Word32
-pullWord32 = pullGet getWord32host
+instance Show Fixed where
+    show (Fixed i) = let (q,r) = quotRem i 256 in printf "%d.%u" q (abs r)
 
-pullInt32 :: Decoder Int32
-pullInt32 = fromIntegral <$> pullGet getWord32host
+getInt32 :: Get Int32
+getInt32 = fromIntegral <$> getWord32
 
-pullArray :: Decoder [Word32]
-pullArray = do
-    size <- pullWord32
-    replicateM (fromIntegral $ size `div` 4) pullWord32
+getFixed :: Get Fixed
+getFixed = Fixed <$> getInt32
 
-pullString :: Decoder (Maybe String)
-pullString = do
-    len <- pullWord32
+getArray :: Get [Word32]
+getArray = do
+    size <- getWord32
+    replicateM (fromIntegral $ size `div` 4) getWord32
+
+getString :: Get (Maybe String)
+getString = do
+    len <- getWord32
     if len == 0
       then return Nothing
       else do
-          str <- pullBytes $ fromIntegral len - 1
-          pullSkipBytes 1
-          pullAlign 4
+          str <- getBytes $ fromIntegral len - 1
+          getSkipBytes 1
+          getAlign 4
           return . Just $ UTF8.toString str
 
-pullObjId :: Decoder (Maybe ObjId)
-pullObjId = let f 0 = Nothing
-                f x = Just x
-            in  f <$> pullWord32
+getObjId :: Get (Maybe ObjId)
+getObjId = let f 0 = Nothing
+               f x = Just x
+           in  f <$> getWord32
 
-pullArg :: P.Argument -> Decoder Argument
-pullArg arg =
+getArg :: P.Argument -> Get Argument
+getArg arg =
     case argType arg of
-         TypeSigned     -> ArgInt    <$> pullInt32
-         TypeUnsigned   -> ArgWord   <$> pullWord32
-         TypeArray      -> ArgArray  <$> pullArray
-         TypeString _   -> ArgString <$> pullString
-         TypeObject _ _ -> ArgObject <$> pullObjId
-         TypeNew    _ _ -> ArgNew    <$> pullObjId
-         TypeFd         -> ArgFd     <$> pullFd
-         TypeFixed      -> ArgFixed . fixedToDouble <$> pullInt32
-    where
-        fixedToDouble :: Int32 -> Double
-        fixedToDouble = (/ 256) . fromIntegral
+         TypeSigned     -> ArgInt    <$> getInt32
+         TypeUnsigned   -> ArgWord   <$> getWord32
+         TypeArray      -> ArgArray  <$> getArray
+         TypeString _   -> ArgString <$> getString
+         TypeObject _ _ -> ArgObject <$> getObjId
+         TypeNew    _ _ -> ArgNew    <$> getObjId
+         TypeFd         -> ArgFd     <$> getFd
+         TypeFixed      -> ArgFixed  <$> getFixed
 
+fixedToDouble :: Fixed -> Double
+fixedToDouble = (/ 256) . fromIntegral . unFixed
 
-pullMsg :: (ObjId -> OpCode -> Maybe [P.Argument]) -> Decoder Message
-pullMsg lf = do
-    pullRestart
-    senderId <- pullWord32
-    word2    <- pullWord32
+doubleToFixed :: Double -> Fixed
+doubleToFixed = Fixed . round . (* 256)
+
+getMsg :: (ObjId -> OpCode -> Maybe [P.Argument]) -> Get Message
+getMsg lf = do
+    senderId <- getWord32
+    word2    <- getWord32
     let size  = word2 `shiftR` 16
-        op    = word2 .&. 0xffff
+        op    = fromIntegral $ word2 .&. 0xffff
         margs = lf senderId op
 
     args <- case margs of
-                 Just as -> mapM pullArg as
-                 Nothing -> pullFail $ printf "Unknown object %i while parsing message" senderId
+                 Just as -> mapM getArg as
+                 Nothing -> getFail $ printf "Unknown object %i while parsing message" senderId
 
-    off <- pullGetOffset
+    off <- getOffset
     unless (off == fromIntegral size)
-        . pullFail
+        . getFail
         $ printf "Received message with wrong size. Expected %i bytes, got %i bytes" size off
 
     return $ Message op senderId args
@@ -133,42 +139,33 @@ putString :: String -> Put
 putString s = do
     let bs  = UTF8.fromString s
         len = BS.length bs + 1
-    putWord32host $ fromIntegral len
-    putByteString bs
+    putWord32 $ fromIntegral len
+    putBytes bs
     putWord8 0
     putPadding len
 
 putArray :: [Word32] -> Put
 putArray as = do
-    putWord32host . fromIntegral $ length as * 4
-    mapM_ putWord32host as
+    putWord32 . fromIntegral $ length as * 4
+    mapM_ putWord32 as
 
 putArg :: Argument -> Put
 putArg arg =
     case arg of
-         ArgWord   u -> putWord32host u
-         ArgInt    i -> putWord32host $ fromIntegral i
-         ArgFixed  d -> putWord32host $ doubleToFixed d
-         ArgFd     _ -> return ()
-         ArgString s -> maybe (putWord32host 0) putString s
-         ArgObject o -> maybe (putWord32host 0) putWord32host o
-         ArgNew    o -> maybe (putWord32host 0) putWord32host o
+         ArgWord   u -> putWord32 u
+         ArgInt    i -> putWord32 $ fromIntegral i
+         ArgFixed  f -> putWord32 . fromIntegral $ unFixed f
+         ArgFd     f -> putFd f
+         ArgString s -> maybe (putWord32 0) putString s
+         ArgObject o -> maybe (putWord32 0) putWord32 o
+         ArgNew    o -> maybe (putWord32 0) putWord32 o
          ArgArray  a -> putArray a
-    where
-        doubleToFixed d = round (d * 256)
 
 -- | Serializes everything but the file descriptor arguments of the message.
 putMsg :: Message -> Put
 putMsg msg = do
     let len   = msgLength msg
-        word2 = (len `shiftL` 16) .|. (msgOp msg .&. 0xffff)
-    putWord32host $ msgObj msg
-    putWord32host word2
+        word2 = (len `shiftL` 16) .|. fromIntegral (msgOp msg .&. 0xffff)
+    putWord32 $ msgObj msg
+    putWord32 word2
     mapM_ putArg $ msgArgs msg
-
--- | Serializes the file descriptor arguments of the message.
-putCmsg :: Message -> Put
-putCmsg = mapM_ putWord32host . mapMaybe findFd . msgArgs
-    where
-        findFd (ArgFd fd) = Just $ fromIntegral fd
-        findFd _          = Nothing
