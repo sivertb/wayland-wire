@@ -1,6 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Test.Message
-    ( messageTests )
+    ( messageTests
+    , msgLookup
+    )
 where
 
 import Control.Applicative
@@ -103,7 +105,7 @@ instance Arbitrary Argument where
         oneof [ ArgInt    <$> arbitrary
               , ArgWord   <$> arbitrary
               , ArgFixed . fromIntegral <$> (arbitrary :: Gen Word32)
-              , ArgFd    . fromIntegral <$> (arbitrary :: Gen Word32)
+              , ArgFd    . fromIntegral <$> (choose (0, 1000) :: Gen Word32)
               , ArgString <$> arbitrary
               , ArgObject <$> suchThat arbitrary (/= Just 0)
               , ArgNew    <$> suchThat arbitrary (/= Just 0)
@@ -120,19 +122,19 @@ instance Arbitrary Argument where
              ArgNew    o -> ArgNew      <$> filter (/= Just 0) (shrink o)
              ArgArray  a -> ArgArray    <$> shrink a
 
-getLookup :: Interface -> Bool -> (ObjId -> OpCode -> Maybe [P.Argument])
+getLookup :: Interface -> Bool -> (ObjId -> OpCode -> Maybe [P.Type])
 getLookup iface evt =
     case evt of
-         False -> \_ -> fmap reqArgs   . idx (ifaceRequests iface)
-         True  -> \_ -> fmap eventArgs . idx (ifaceEvents   iface)
+         False -> \_ -> fmap (map argType . reqArgs)   . idx (ifaceRequests iface)
+         True  -> \_ -> fmap (map argType . eventArgs) . idx (ifaceEvents   iface)
     where
         idx []     _ = Nothing
         idx (a:_ ) 0 = Just a
         idx (_:as) n = idx as (n - 1)
 
-genArg :: P.Argument -> Gen Argument
-genArg arg =
-    case argType arg of
+genArg :: P.Type -> Gen Argument
+genArg t =
+    case t of
          TypeSigned     -> ArgInt       <$> arbitrary
          TypeUnsigned   -> ArgWord      <$> arbitrary
          TypeFixed      -> ArgFixed . fromIntegral <$> (arbitrary :: Gen Word32)
@@ -155,8 +157,8 @@ genMessageFromInterface iface = do
                       True  -> fromIntegral . length $ ifaceEvents   iface
                       False -> fromIntegral . length $ ifaceRequests iface
     op <- choose (0, maxOps - 1)
-    let Just args = getLookup iface evt 0 op
-    msg <- Message op <$> arbitrary <*> mapM genArg args
+    let Just ts = getLookup iface evt 0 op
+    msg <- Message op <$> arbitrary <*> mapM genArg ts
     return (msg, evt)
 
 hasEvents :: Interface -> Bool
@@ -168,10 +170,9 @@ hasRequests = not . null . ifaceRequests
 hasEventsOrRequests :: Interface -> Bool
 hasEventsOrRequests iface = hasEvents iface || hasRequests iface
 
-msgLookup :: Message -> (ObjId -> OpCode -> Maybe [P.Argument])
-msgLookup msg _ _ = Just $ map (mkArg . argToType) (msgArgs msg)
+msgLookup :: Message -> (ObjId -> OpCode -> Maybe [P.Type])
+msgLookup msg _ _ = Just $ map argToType (msgArgs msg)
     where
-        mkArg t = P.Argument "" Nothing t Nothing
         argToType arg =
             case arg of
                  ArgInt    _ -> TypeSigned

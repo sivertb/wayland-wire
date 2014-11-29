@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Graphics.Wayland.Wire.Message
-    ( Message (..)
+    ( MessageLookup
+    , Message (..)
     , Argument (..)
     , getMsg
     , putMsg
@@ -24,6 +25,10 @@ import qualified Graphics.Wayland.Protocol as P
 import Graphics.Wayland.Types
 import System.Posix
 import Text.Printf
+
+-- | A function that is used to lookup the number and type of the arguments a
+-- message will have based on the object id and op code.
+type MessageLookup = ObjId -> OpCode -> Maybe [P.Type]
 
 data Message =
     Message { msgOp   :: OpCode
@@ -75,9 +80,9 @@ getObjId = let f 0 = Nothing
                f x = Just x
            in  f <$> getWord32
 
-getArg :: P.Argument -> Get Argument
-getArg arg =
-    case argType arg of
+getArg :: P.Type -> Get Argument
+getArg t =
+    case t of
          TypeSigned     -> ArgInt    <$> getInt32
          TypeUnsigned   -> ArgWord   <$> getWord32
          TypeArray      -> ArgArray  <$> getArray
@@ -93,7 +98,7 @@ fixedToDouble = (/ 256) . fromIntegral . unFixed
 doubleToFixed :: Double -> Fixed
 doubleToFixed = Fixed . round . (* 256)
 
-getMsg :: (ObjId -> OpCode -> Maybe [P.Argument]) -> Get Message
+getMsg :: MessageLookup -> Get Message
 getMsg lf = do
     senderId <- getWord32
     word2    <- getWord32
