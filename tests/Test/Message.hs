@@ -2,6 +2,7 @@
 module Test.Message
     ( messageTests
     , msgLookup
+    , genMessageFromTypes
     )
 where
 
@@ -17,6 +18,7 @@ import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Protocol hiding (Argument)
 import qualified Graphics.Wayland.Protocol as P
 import Graphics.Wayland.Types
+import System.Posix
 import Test.QuickCheck
 
 instance (Eq a) => Eq (Decoder a) where
@@ -112,12 +114,16 @@ instance Arbitrary Message where
         <*> arbitrary
     shrink (Message a b c) = [ Message a' b' c' | (a', b', c') <- shrink (a, b, c) ]
 
+instance Arbitrary Fd where
+    arbitrary = fromIntegral <$> (choose (0, 1000) :: Gen Word32)
+    shrink f = fromIntegral <$> shrink (fromIntegral f :: Word32)
+
 instance Arbitrary Argument where
     arbitrary =
         oneof [ ArgInt    <$> arbitrary
               , ArgWord   <$> arbitrary
+              , ArgFd     <$> arbitrary
               , ArgFixed . fromIntegral <$> (arbitrary :: Gen Word32)
-              , ArgFd    . fromIntegral <$> (choose (0, 1000) :: Gen Word32)
               , ArgString <$> arbitrary
               , ArgObject <$> suchThat arbitrary (/= Just 0)
               , ArgNew    <$> suchThat arbitrary (/= Just 0)
@@ -128,7 +134,7 @@ instance Arbitrary Argument where
              ArgInt    i -> ArgInt      <$> shrink i
              ArgWord   w -> ArgWord     <$> shrink w
              ArgFixed  f -> ArgFixed . fromIntegral <$> shrink (fromIntegral f :: Word32)
-             ArgFd     f -> ArgFd    . fromIntegral <$> shrink (fromIntegral f :: Word32)
+             ArgFd     f -> ArgFd       <$> shrink f
              ArgString s -> ArgString   <$> shrink s
              ArgObject o -> ArgObject   <$> filter (/= Just 0) (shrink o)
              ArgNew    o -> ArgNew      <$> filter (/= Just 0) (shrink o)
@@ -159,6 +165,9 @@ genArg t =
         marb True  = arbitrary
         marb False = Just <$> arbitrary
 
+genMessageFromTypes :: OpCode -> ObjId -> [P.Type] -> Gen Message
+genMessageFromTypes op obj ts = Message op obj <$> mapM genArg ts
+
 genMessageFromInterface :: Interface -> Gen (Message, Bool)
 genMessageFromInterface iface = do
     evt <- case (hasEvents iface, hasRequests iface) of
@@ -168,9 +177,10 @@ genMessageFromInterface iface = do
     let maxOps = case evt of
                       True  -> fromIntegral . length $ ifaceEvents   iface
                       False -> fromIntegral . length $ ifaceRequests iface
-    op <- OpCode <$> choose (0, maxOps - 1)
+    op  <- OpCode <$> choose (0, maxOps - 1)
+    obj <- arbitrary
     let Just ts = getLookup iface evt 0 op
-    msg <- Message op <$> arbitrary <*> mapM genArg ts
+    msg <- genMessageFromTypes op obj ts
     return (msg, evt)
 
 hasEvents :: Interface -> Bool
