@@ -21,6 +21,7 @@ library
                         Graphics.Wayland.Wire.Decoder
                         Graphics.Wayland.Wire.Get
                         Graphics.Wayland.Wire.Put
+                        Graphics.Wayland.Wire.Encode
   build-depends:        base >=4.7, unix, hxt, binary, bytestring,
                         network, network-msg >= 0.4, utf8-string,
                         free, mtl
