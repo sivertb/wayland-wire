@@ -92,6 +92,18 @@ instance Arbitrary Entry where
         <*> arbitrary
         <*> arbitrary
 
+instance Arbitrary OpCode where
+    arbitrary = OpCode <$> arbitrary
+    shrink (OpCode o) = map OpCode (shrink o)
+
+instance Arbitrary ObjId where
+    arbitrary = ObjId <$> arbitrary
+    shrink (ObjId o) = map ObjId (shrink o)
+
+instance Arbitrary NewId where
+    arbitrary = NewId <$> arbitrary
+    shrink (NewId o) = map NewId (shrink o)
+
 instance Arbitrary Message where
     arbitrary =
         Message
@@ -156,7 +168,7 @@ genMessageFromInterface iface = do
     let maxOps = case evt of
                       True  -> fromIntegral . length $ ifaceEvents   iface
                       False -> fromIntegral . length $ ifaceRequests iface
-    op <- choose (0, maxOps - 1)
+    op <- OpCode <$> choose (0, maxOps - 1)
     let Just ts = getLookup iface evt 0 op
     msg <- Message op <$> arbitrary <*> mapM genArg ts
     return (msg, evt)

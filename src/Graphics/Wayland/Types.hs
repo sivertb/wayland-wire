@@ -1,10 +1,16 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Graphics.Wayland.Types
-    ( ObjId
-    , OpCode
+    ( ObjId (..)
+    , NewId (..)
+    , OpCode (..)
     )
 where
 
 import Data.Word
 
-type ObjId = Word32
-type OpCode = Word16
+newtype ObjId = ObjId { unObjId :: Word32 }
+    deriving (Show, Eq, Ord, Num)
+newtype NewId = NewId { unNewId :: Word32 }
+    deriving (Show, Eq, Ord, Num)
+newtype OpCode = OpCode { unOpCode :: Word16 }
+    deriving (Show, Eq, Ord, Num)

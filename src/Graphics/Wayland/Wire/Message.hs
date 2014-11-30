@@ -44,7 +44,7 @@ data Argument =
   | ArgFd     Fd
   | ArgString (Maybe String)
   | ArgObject (Maybe ObjId)
-  | ArgNew    (Maybe ObjId)
+  | ArgNew    (Maybe NewId)
   | ArgArray  [Word32]
   deriving (Show, Eq)
 
@@ -75,10 +75,10 @@ getString = do
           getAlign 4
           return . Just $ UTF8.toString str
 
-getObjId :: Get (Maybe ObjId)
-getObjId = let f 0 = Nothing
-               f x = Just x
-           in  f <$> getWord32
+getId :: Get (Maybe Word32)
+getId = let f 0 = Nothing
+            f x = Just x
+        in  f <$> getWord32
 
 getArg :: P.Type -> Get Argument
 getArg t =
@@ -87,8 +87,8 @@ getArg t =
          TypeUnsigned   -> ArgWord   <$> getWord32
          TypeArray      -> ArgArray  <$> getArray
          TypeString _   -> ArgString <$> getString
-         TypeObject _ _ -> ArgObject <$> getObjId
-         TypeNew    _ _ -> ArgNew    <$> getObjId
+         TypeObject _ _ -> ArgObject . fmap ObjId <$> getId
+         TypeNew    _ _ -> ArgNew    . fmap NewId <$> getId
          TypeFd         -> ArgFd     <$> getFd
          TypeFixed      -> ArgFixed  <$> getFixed
 
@@ -100,15 +100,15 @@ doubleToFixed = Fixed . round . (* 256)
 
 getMsg :: MessageLookup -> Get Message
 getMsg lf = do
-    senderId <- getWord32
+    senderId <- ObjId <$> getWord32
     word2    <- getWord32
     let size  = word2 `shiftR` 16
-        op    = fromIntegral $ word2 .&. 0xffff
+        op    = OpCode .fromIntegral $ word2 .&. 0xffff
         margs = lf senderId op
 
     args <- case margs of
                  Just as -> mapM getArg as
-                 Nothing -> getFail $ printf "Unknown object %i while parsing message" senderId
+                 Nothing -> getFail . printf "Unknown object %i while parsing message" $ unObjId senderId
 
     off <- getOffset
     unless (off == fromIntegral size)
@@ -162,15 +162,15 @@ putArg arg =
          ArgFixed  f -> putWord32 . fromIntegral $ unFixed f
          ArgFd     f -> putFd f
          ArgString s -> maybe (putWord32 0) putString s
-         ArgObject o -> maybe (putWord32 0) putWord32 o
-         ArgNew    o -> maybe (putWord32 0) putWord32 o
+         ArgObject o -> (putWord32 . maybe 0 unObjId) o
+         ArgNew    o -> (putWord32 . maybe 0 unNewId) o
          ArgArray  a -> putArray a
 
 -- | Serializes everything but the file descriptor arguments of the message.
 putMsg :: Message -> Put
 putMsg msg = do
     let len   = msgLength msg
-        word2 = (len `shiftL` 16) .|. fromIntegral (msgOp msg .&. 0xffff)
-    putWord32 $ msgObj msg
+        word2 = (len `shiftL` 16) .|. fromIntegral (unOpCode (msgOp msg) .&. 0xffff)
+    putWord32 . unObjId $ msgObj msg
     putWord32 word2
     mapM_ putArg $ msgArgs msg
