@@ -6,6 +6,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Monad
 import Data.Maybe
+import Data.List
 import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Wire.Socket
 import System.IO.Error
@@ -96,13 +97,13 @@ prop_sendRecv msg =
         (eq, res) <- run $ do
             let lf  = return (msgLookup msg)
                 fds = msgFds msg
-            paths <- createFds fds
+            paths <- createFds $ nub fds
             fence <- newEmptyMVar
             (_, res) <- runSockets (server lf fence msg) (client lf fence)
             eq <- case res of
                        Nothing -> return False
                        Just m  -> cmpMsg msg m
-            closeFds fds
+            closeFds $ nub fds
             mapM_ removeLink paths
             return (eq, res)
         stop (counterexample (show (Just msg) ++ " /= " ++ show res) eq)
