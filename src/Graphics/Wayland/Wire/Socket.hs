@@ -40,7 +40,7 @@ wrapSocket lf s = Socket lf <$> newMVar (s, mempty)
 -- This function replicates what wayland does in it's add_socket function.
 socketAddr :: Maybe String -> IO S.SockAddr
 socketAddr name = do
-    prefix   <- getEnvDefault "XDG_RUNTIME_DIR" ""
+    prefix   <- getEnvDefault "XDG_RUNTIME_DIR" "/tmp"
     envName  <- getEnv "WAYLAND_DISPLAY"
     let sockName = case (name, envName) of
                         (Just s, _     ) -> s
