@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Graphics.Wayland.Wire.Encode
     ( Encodable
     , Decodable
@@ -8,6 +9,8 @@ module Graphics.Wayland.Wire.Encode
     )
 where
 
+import Control.Monad
+import Control.Monad.IO.Class
 import Data.Int
 import Data.Word
 import Data.Monoid
@@ -18,8 +21,8 @@ import System.Posix
 class Encodable a where
     encode :: OpCode -> ObjId -> [Argument] -> a
 
-class Decodable a where
-    decode :: [Argument] -> Maybe String -> a -> IO (Maybe String)
+class Decodable a b m where
+    decode :: [Argument] -> Maybe String -> a -> m (Either String b)
 
 instance Encodable Message where
     encode op obj = Message op obj . reverse
@@ -27,14 +30,14 @@ instance Encodable Message where
 instance (ArgType a, Encodable b) => Encodable (a -> b) where
     encode op obj args a = encode op obj (toArg a : args)
 
-instance Decodable (IO a) where
+instance MonadIO m => Decodable (m a) a m where
     decode args err m =
         case (args, err) of
-             ([], Nothing) -> m >> return Nothing
-             ([], _      ) -> return err
-             (_ , _      ) -> return (err <> Just "Too many arguments")
+             ([], Nothing) -> liftM Right m
+             (_ , Nothing) -> return $ Left "Too many arguments"
+             (_ , Just e ) -> return $ Left e
 
-instance (ArgType a, Decodable b) => Decodable (a -> b) where
+instance (ArgType a, Decodable b c m) => Decodable (a -> b) c m where
     decode []     err m = decode [] (err <> Just "Not enough arguments") (m undefined)
     decode (a:as) err m =
         case fromArg a of
@@ -103,5 +106,9 @@ instance ArgType [Word32] where
 toMessage :: Encodable a => OpCode -> ObjId -> a
 toMessage op obj = encode op obj []
 
-fromMessage :: Decodable a => Message -> a -> IO (Maybe String)
-fromMessage msg = decode (msgArgs msg) Nothing
+fromMessage :: (Monad m, Decodable a b m) => Message -> a -> m b
+fromMessage msg m = do
+    res <- decode (msgArgs msg) Nothing m
+    case res of
+         Left  e -> fail e
+         Right x -> return x
