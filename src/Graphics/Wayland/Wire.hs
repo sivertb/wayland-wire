@@ -1,6 +1,6 @@
 module Graphics.Wayland.Wire
     ( -- * Message
-      Message
+      Message (..)
     -- * Socket
     , Socket
     , listen
