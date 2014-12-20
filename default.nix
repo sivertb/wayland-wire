@@ -1,4 +1,4 @@
-{ cabal, cabalInstall, filterSource, hxt, networkMsg, utf8String, QuickCheck }:
+{ cabal, cabalInstall, filterSource, hxt, networkMsg, utf8String, QuickCheck, mtl, free }:
 
 cabal.mkDerivation
 ( self:
@@ -6,7 +6,7 @@ cabal.mkDerivation
   ; version = "0.1.0.0"
   ; src = filterSource ./.
   ; buildTools = [ cabalInstall ]
-  ; buildDepends = [ hxt networkMsg utf8String ]
+  ; buildDepends = [ hxt networkMsg utf8String mtl free ]
   ; testDepends = [ QuickCheck ]
   ; doCheck = true
   ; enableSplitObjs = false
