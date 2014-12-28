@@ -1,12 +1,16 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 module Graphics.Wayland.Dispatch
     ( Side (..)
     , RecordType (..)
+    , Requests
+    , Events
+    , Constructor
+    , P
+    , UnCons
+    , RetType
     , Object (..)
     , Slots
     , Signals
@@ -33,6 +37,14 @@ newtype Object (c :: Side) i = Object { unObject :: ObjId }
 type family Constructor (r :: RecordType) c i m where
     Constructor Slot   c i m = (Object c i -> m (Slots c i m)) -> m (Object c i)
     Constructor Signal c i m = Object c i -> m (Slots c i m)
+
+-- | A helper type family to prove that 'Constructor' is injective.
+type family UnCons cons where
+    UnCons ((Object c i -> m x) -> m (Object c i)) = P Slot   c i m
+    UnCons ((Object c i -> m x)                  ) = P Signal c i m
+
+-- | Defines an empty data type used as the proof for 'UnCons'.
+data P (r :: RecordType) (c :: Side) i (m :: * -> *)
 
 type family RetType (r :: RecordType) a where
     RetType Signal a = a
@@ -74,8 +86,11 @@ newObject f = do
     return o
 
 -- | Checks that the interface of a constructor matches the expected interface.
-checkCons :: forall e r c i m
-          .  (Error e, DispatchInterface i, MonadError e m)
+checkCons :: ( Error e
+             , DispatchInterface i
+             , MonadError e m
+             , UnCons (Constructor r c i m) ~ P r c i m
+             )
           => String                 -- ^ The expected interface name.
           -> Int                    -- ^ The expected interface version.
           -> Constructor r c i m    -- ^ The interface constructor.
@@ -86,6 +101,8 @@ checkCons name ver cons =
         $ printf "Interface (%s, %i) does not match expected interface (%s, %i)\n"
             (interfaceName iface) (interfaceVersion iface) name ver
     where
-        getIface :: Constructor r c i m -> i
+        getIface :: UnCons (Constructor r c i m) ~ P r c i m
+                 => Constructor r c i m
+                 -> i
         getIface = undefined
         iface = getIface cons
