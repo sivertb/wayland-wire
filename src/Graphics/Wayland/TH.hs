@@ -17,20 +17,13 @@ import Language.Haskell.TH
 import System.Posix (Fd)
 import Text.XML.HXT.Core hiding (mkName)
 
-data Side = Server | Client deriving (Eq, Show)
-data RecordType = Slots | Signals deriving (Eq, Show)
-
 mapFirst :: (a -> a) -> [a] -> [a]
 mapFirst _ []     = []
 mapFirst f (a:as) = f a : as
 
 sideName :: Side -> Name
-sideName Client = ''Client
-sideName Server = ''Server
-
-rtName :: RecordType -> Name
-rtName Slots   = ''Slots
-rtName Signals = ''Signals
+sideName Client = 'Client
+sideName Server = 'Server
 
 -- | Converst a snake_case string to CamelCase, leaving the first character as
 -- upper-case.
@@ -76,14 +69,6 @@ getRequests = map (reqName &&& (map argType . reqArgs)) . ifaceRequests
 getEvents :: Interface -> [(String, [P.Type])]
 getEvents = map (eventName &&& (map argType . eventArgs)) . ifaceEvents
 
-getSlots :: Side -> Interface -> [(String, [P.Type])]
-getSlots Server = getRequests
-getSlots Client = getEvents
-
-getSignals :: Side -> Interface -> [(String, [P.Type])]
-getSignals Server = getEvents
-getSignals Client = getRequests
-
 -- | Wraps a type in 'Maybe' if the first argument is 'True'.
 wrapMaybe :: Bool -> Type -> Type
 wrapMaybe True c = AppT (ConT ''Maybe) c
@@ -96,10 +81,10 @@ genInterfaceType :: Maybe String -> Q (Type, [Name])
 genInterfaceType = maybe ((VarT &&& (: [])) <$> newName "i") (return . (, []) . ConT . mkNameU)
 
 -- | Generates the type of an object.
-genObjectType :: Side -> Bool -> Maybe String -> Q (Type, [Name])
-genObjectType s n i = first (wrapMaybe n . AppT obj) <$> genInterfaceType i
+genObjectType :: Bool -> Maybe String -> Q (Type, [Name])
+genObjectType n i = first (wrapMaybe n . AppT obj) <$> genInterfaceType i
     where
-        obj = AppT (ConT ''Object) (ConT $ sideName s)
+        obj = AppT (ConT ''Object) (VarT $ mkName "c")
 
 -- | Generates the type of a new object.
 --
@@ -112,26 +97,25 @@ genObjectType s n i = first (wrapMaybe n . AppT obj) <$> genInterfaceType i
 -- 'Object c i -> m (Slots c i m)'
 -- That is a function that given an object returns a set of functions handling
 -- calls to that object. In addition the new object is in the return type.
-genNewType :: RecordType -> Side -> Bool -> Maybe String -> Q (Type, [Name], [Type])
-genNewType rt s n iface = do
+genNewType :: Bool -> Maybe String -> Q (Type, [Name], [Type])
+genNewType n iface = do
     (it, ns) <- genInterfaceType iface
 
-    let c    = conT $ sideName s
+    let c    = varT $ mkName "c"
         i    = return it
         m    = varT $ mkName "m"
+        r    = varT $ mkName "r"
+        cons = [t| Constructor $r $c $i $m |]
         obj  = [t| Object $c $i |]
-        cons = [t| $obj -> $m (Slots $c $i $m) |]
 
-    case rt of
-         Slots   -> (, ns, []) . wrapMaybe n <$> [t| $cons -> $m $obj |]
-         Signals -> (, ns,   )
-                    <$> (wrapMaybe n <$> cons)
-                    <*> ((:[]) . wrapMaybe n <$> obj)
+    (, ns, )
+        <$> (wrapMaybe n <$> cons)
+        <*> ((: []) . wrapMaybe n <$> obj)
 
 -- | Generates the type of a single function argument, returning both the type
 -- and any type variables it might contain.
-genArgType :: RecordType -> Side -> P.Type -> Q (Type, [Name], [Type])
-genArgType rt s t =
+genArgType :: P.Type -> Q (Type, [Name], [Type])
+genArgType t =
     case t of
          TypeSigned     -> (, [], []) <$> [t| Int32     |]
          TypeUnsigned   -> (, [], []) <$> [t| Word32    |]
@@ -139,8 +123,8 @@ genArgType rt s t =
          TypeFd         -> (, [], []) <$> [t| Fd        |]
          TypeArray      -> (, [], []) <$> [t| [Word32]  |]
          TypeString n   -> return (wrapMaybe n $ ConT ''String, [], [])
-         TypeObject n i -> (\(a,b) -> (a, b, [])) <$> genObjectType s n i
-         TypeNew    n i -> genNewType rt s n i
+         TypeObject n i -> (\(a,b) -> (a, b, [])) <$> genObjectType n i
+         TypeNew    n i -> genNewType n i
 
 -- | Creates a tuple with the given list of element types.
 -- The list can be empty, in which case it will create the '()' type.
@@ -148,38 +132,66 @@ genArgType rt s t =
 mkTuple :: [Type] -> Type
 mkTuple ts = foldl AppT (TupleT $ length ts) ts
 
--- | Generates a function type.
-genFuncType :: RecordType -> Side -> [P.Type] -> Q Type
-genFuncType rt s ts = do
-    (ts', is', rs') <- unzip3 <$> mapM (genArgType rt s) ts
+-- | Returns a class predicate for 'DispatchInterface' for the given name.
+classCxt :: Name -> PredQ
+classCxt i = classP ''DispatchInterface [varT i]
 
-    let is = concat is'
-        rs = concat rs'
-        t  = foldr (\a b -> AppT (AppT ArrowT a) b) (AppT (VarT $ mkName "m") (mkTuple rs)) ts'
+-- | Return an equality predicate checking that
+-- 'UnCons (Constructor r c i m) ~ P r c i m'.
+-- This is used as a proof that 'Constructor' is injective.
+equalCxt :: Name -> PredQ
+equalCxt i =
+    let r = varT $ mkName "r"
+        c = varT $ mkName "c"
+        m = varT $ mkName "m"
+    in  equalP
+            [t| UnCons (Constructor $r $c $(varT i) $m) |]
+            [t| P $r $c $(varT i) $m |]
+
+-- | Generates a function type.
+genFuncType :: [P.Type] -> Q Type
+genFuncType ts = do
+    (ts', is', rs') <- unzip3 <$> mapM genArgType ts
+
+    let is  = concat is'
+        rs  = concat rs'
+        ret = AppT
+                (VarT $ mkName "m")
+                (AppT
+                    (AppT (ConT ''RetType) (VarT $ mkName "r"))
+                    (mkTuple rs)
+                )
+        t   = foldr (\a b -> AppT (AppT ArrowT a) b) ret ts'
 
     if null is
       then return t
-      else forallT (map PlainTV is) (cxt [classP ''DispatchInterface (map varT is)]) (return t)
+      else forallT
+                (map PlainTV is)
+                (cxt $ map classCxt is ++ map equalCxt is)
+                (return t)
 
 fieldName :: Interface -> String -> Name
-fieldName iface n = mkNameL $ ifaceName iface ++ "_" ++ n
+fieldName iface prefix = mkNameL $ ifaceName iface ++ "_" ++ prefix
 
-genRecord :: RecordType -> Side -> Interface -> Q [Dec]
-genRecord rt s iface = do
-    con <- recC conName (map mkField args)
-    return [ DataInstD [] (rtName rt) types [con] [] ]
+genRecord :: String -> Name -> [(String, [P.Type])] -> Interface -> Q [Dec]
+genRecord prefix recName args iface =
+    (: []) <$> dataInstD (pure []) recName types [con] []
     where
-        conName     = mkNameU $ ifaceName iface ++ prefix
-        typeName    = mkNameU $ ifaceName iface
-        m = VarT $ mkName "m"
-        types = [ConT $ sideName s, ConT typeName, m]
-        mkField (n, t) = (fieldName iface n, NotStrict, ) <$> genFuncType rt s t
-        prefix = case rt of
-                      Slots   -> "_slots"
-                      Signals -> "_signals"
-        args = case rt of
-                    Slots   -> getSlots s iface
-                    Signals -> getSignals s iface
+        con            = recC conName $ map mkField args
+        conName        = mkNameU $ ifaceName iface ++ prefix
+        typeName       = mkNameU $ ifaceName iface
+        types          = [ varT $ mkName "r"
+                         , varT $ mkName "c"
+                         , conT $ typeName
+                         , varT $ mkName "m"
+                         ]
+        mkField (n, t) = (fieldName iface n, NotStrict, ) <$> genFuncType t
+
+genRequests :: Interface -> Q [Dec]
+genRequests iface = genRecord "_requests" ''Requests (getRequests iface) iface
+
+genEvents :: Interface -> Q [Dec]
+genEvents iface = genRecord "_events" ''Events (getEvents iface) iface
 
 genSingleDispatch :: Interface -> Name -> (Integer, (String, [P.Type])) -> MatchQ
 genSingleDispatch iface slots (i, (n, ts)) =
@@ -188,6 +200,7 @@ genSingleDispatch iface slots (i, (n, ts)) =
         (normalB [| undefined |])
         []
 
+{-
 genDispatch :: Side -> Interface -> Q Exp
 genDispatch s iface = do
     slots <- newName "slots"
@@ -202,37 +215,37 @@ genDispatch s iface = do
 genSignals :: Side -> Interface -> Q Exp
 genSignals s iface = [| undefined |]
 
-genDispatchInstance :: Side -> Interface -> Q [Dec]
-genDispatchInstance s iface =
+genDispatchInstance :: Interface -> Q [Dec]
+genDispatchInstance iface =
     [d|
         instance Dispatch $i $c where
-            dispatch = $(genDispatch s iface)
-            signals  = $(genSignals  s iface)
+            dispatch = $(genDispatch iface)
+            signals  = $(genSignals  iface)
     |]
     where
         c = conT $ sideName s
         i = conT . mkNameU $ ifaceName iface
-
+-}
 
 -- | Generates all the code for an interface.
-generateInterface :: Side -> Interface -> Q [Dec]
-generateInterface s iface =
+generateInterface :: Interface -> Q [Dec]
+generateInterface iface =
     concat <$> sequence
     [ genEmptyType . mkName . toCamelU $ ifaceName iface
-    , genDispatchInterfaceInst iface
-    , genRecord Slots s iface
-    , genRecord Signals s iface
-    , genDispatchInstance s iface
+    -- , genDispatchInterfaceInst iface
+    , genRequests iface
+    , genEvents iface
+    -- , genDispatchInstance s iface
     ]
 
 -- | Generates code for a protocol.
-generateProtocol :: Side -> Protocol -> Q [Dec]
-generateProtocol s = fmap concat . mapM (generateInterface s) . protoInterfaces
+generateProtocol :: Protocol -> Q [Dec]
+generateProtocol = fmap concat . mapM generateInterface . protoInterfaces
 
 -- | Generates code for a protocol specified in the given XML file.
-generateFromXml :: Side -> FilePath -> Q [Dec]
-generateFromXml side file = do
+generateFromXml :: FilePath -> Q [Dec]
+generateFromXml file = do
     proto <- runIO . runX $ xunpickleDocument xpickle [withRemoveWS yes] file
     case proto of
-         [p] -> generateProtocol side p
+         [p] -> generateProtocol p
          _   -> fail $ "Could not unpickle protocol file " ++ file
