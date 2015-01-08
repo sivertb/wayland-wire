@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Graphics.Wayland.Wire.Encode
     ( Encodable
@@ -61,6 +62,11 @@ instance ArgType (Maybe String) where
 instance ArgType Int32 where
     toArg = ArgInt
     fromArg (ArgInt i) = Just i
+    fromArg _          = Nothing
+
+instance ArgType Int where
+    toArg = ArgInt . fromIntegral
+    fromArg (ArgInt i) = Just $ fromIntegral i
     fromArg _          = Nothing
 
 instance ArgType Word32 where

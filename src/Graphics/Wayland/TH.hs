@@ -11,6 +11,7 @@ import Data.Int
 import Data.Word
 import Graphics.Wayland.Dispatch
 import Graphics.Wayland.Protocol hiding (Type)
+import Graphics.Wayland.Types
 import Graphics.Wayland.Wire
 import qualified Graphics.Wayland.Protocol as P
 import Language.Haskell.TH
@@ -82,9 +83,14 @@ genInterfaceType = maybe ((VarT &&& (: [])) <$> newName "i") (return . (, []) . 
 
 -- | Generates the type of an object.
 genObjectType :: Bool -> Maybe String -> Q (Type, [Name])
-genObjectType n i = first (wrapMaybe n . AppT obj) <$> genInterfaceType i
+genObjectType n i = first (wrapMaybe n) <$> maybe (return (ConT ''ObjId, [])) (return . (, []) . AppT obj . ConT . mkNameU) i
     where
         obj = AppT (ConT ''Object) (VarT $ mkName "c")
+{-
+    first (wrapMaybe n . AppT obj) <$> genInterfaceType i
+    where
+        obj = AppT (ConT ''Object) (VarT $ mkName "c")
+        -}
 
 -- | Generates the type of a new object.
 --
@@ -98,19 +104,28 @@ genObjectType n i = first (wrapMaybe n . AppT obj) <$> genInterfaceType i
 -- That is a function that given an object returns a set of functions handling
 -- calls to that object. In addition the new object is in the return type.
 genNewType :: Bool -> Maybe String -> Q (Type, [Name], [Type])
-genNewType n iface = do
+genNewType nullable iface = do
     (it, ns) <- genInterfaceType iface
 
     let c    = varT $ mkName "c"
         i    = return it
         m    = varT $ mkName "m"
         r    = varT $ mkName "r"
-        cons = [t| Constructor $r $c $i $m |]
+        cons = wrapMaybe nullable <$> [t| Constructor $r $c $i $m |]
         obj  = [t| Object $c $i |]
 
+    (, [], [])
+        <$> if null ns
+              then cons
+              else forallT
+                    (map PlainTV ns)
+                    (cxt $ map classCxt ns ++ map equalCxt ns)
+                    cons
+          {-
     (, ns, )
-        <$> (wrapMaybe n <$> cons)
-        <*> ((: []) . wrapMaybe n <$> obj)
+        <$> (wrapMaybe nullable <$> cons)
+        <*> ((: []) . wrapMaybe nullable <$> obj)
+        -}
 
 -- | Generates the type of a single function argument, returning both the type
 -- and any type variables it might contain.
@@ -193,49 +208,83 @@ genRequests iface = genRecord "_requests" ''Requests (getRequests iface) iface
 genEvents :: Interface -> Q [Dec]
 genEvents iface = genRecord "_events" ''Events (getEvents iface) iface
 
-genSingleDispatch :: Interface -> Name -> (Integer, (String, [P.Type])) -> MatchQ
-genSingleDispatch iface slots (i, (n, ts)) =
+genDispatchArg :: P.Type -> Q ([Name], ExpQ)
+genDispatchArg t =
+    case t of
+         TypeNew    nullable interface -> do
+             name <- newName "name"
+             ver  <- newName "ver"
+             new  <- newName "new"
+
+             let (ns, just) = case interface of
+                                   Just _  -> ([new           ], [| Nothing                          |])
+                                   Nothing -> ([name, ver, new], [| Just ($(varE name), $(varE ver)) |])
+                 arg  = if nullable
+                          then [| fmap (regObject $just) $(varE new) |]
+                          else [| regObject $just $(varE new) |]
+
+             return (ns, arg)
+
+         TypeObject nullable (Just _) -> do
+             obj <- newName "obj"
+             let arg = if nullable
+                         then [| fmap Object $(varE obj) |]
+                         else [| Object $(varE obj) |]
+             return ([obj], arg)
+
+         _ -> ((: []) &&& varE) <$> newName "arg"
+
+genSingleDispatch :: Interface -> (Integer, (String, [P.Type])) -> MatchQ
+genSingleDispatch iface (i, (n, ts)) = do
+    (pats, args') <- first concat . unzip <$> mapM genDispatchArg ts
+    args          <- sequence args'
+
+    let func  = lamE (map varP pats) (return $ foldl AppE field args)
+        field = AppE (VarE $ fieldName iface n) (VarE $ mkName "slots")
+
     match
         (litP $ IntegerL i)
-        (normalB [| undefined |])
+        (normalB [| fromMessage $(varE $ mkName "msg") $(func) |])
         []
 
-{-
+getSlots :: Side -> Interface -> [(String, [P.Type])]
+getSlots Server = getRequests
+getSlots Client = getEvents
+
 genDispatch :: Side -> Interface -> Q Exp
 genDispatch s iface = do
-    slots <- newName "slots"
-    msg   <- newName "msg"
-    op    <- newName "op"
-    lamE [varP slots, varP msg] $
-        caseE [| msgOp $(varE msg) |]
-        ( map (genSingleDispatch iface slots) (zip [0..] $ getSlots s iface) ++
+    lamE [varP $ mkName "slots", varP $ mkName "msg"] $
+        caseE [| msgOp $(varE $ mkName "msg") |]
+        ( map (genSingleDispatch iface ) (zip [0..] (getSlots s iface)) ++
         [ match (varP op) (normalB [| fail ("Unknown opcode " ++ show $(varE op)) |]) [] ]
         )
+    where
+        op = mkName "op"
 
 genSignals :: Side -> Interface -> Q Exp
 genSignals s iface = [| undefined |]
 
-genDispatchInstance :: Interface -> Q [Dec]
-genDispatchInstance iface =
+genDispatchInstance :: Side -> Interface -> Q [Dec]
+genDispatchInstance s iface =
     [d|
         instance Dispatch $i $c where
-            dispatch = $(genDispatch iface)
-            signals  = $(genSignals  iface)
+            dispatch = $(genDispatch s iface)
+            signals  = $(genSignals  s iface)
     |]
     where
         c = conT $ sideName s
         i = conT . mkNameU $ ifaceName iface
--}
 
 -- | Generates all the code for an interface.
 generateInterface :: Interface -> Q [Dec]
 generateInterface iface =
     concat <$> sequence
     [ genEmptyType . mkName . toCamelU $ ifaceName iface
-    -- , genDispatchInterfaceInst iface
+    , genDispatchInterfaceInst iface
     , genRequests iface
     , genEvents iface
-    -- , genDispatchInstance s iface
+    , genDispatchInstance Client iface
+    , genDispatchInstance Server iface
     ]
 
 -- | Generates code for a protocol.
