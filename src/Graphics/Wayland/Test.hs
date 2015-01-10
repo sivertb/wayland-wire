@@ -9,4 +9,4 @@ where
 
 import Graphics.Wayland.TH
 
-$(generateFromXml "/usr/share/wayland/wayland.xml")
+$(generateFromXml Client "/usr/share/wayland/wayland.xml")

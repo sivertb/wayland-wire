@@ -1,28 +1,20 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 module Graphics.Wayland.Dispatch
-    ( Side (..)
-    , RecordType (..)
-    , Requests
-    , Events
-    , Constructor
-    , P
-    , UnCons
-    , RetType
+    ( Server
+    , Client
+    , SlotConstructor
+    , SignalConstructor
     , Object (..)
-    , Slots
-    , Signals
     , Dispatch (..)
     , MonadDispatch (..)
     , DispatchInterface (..)
     , objectFromNewId
     , newObject
     , regObject
-    , checkCons
     )
 where
 
@@ -32,51 +24,17 @@ import Graphics.Wayland.Types
 import Graphics.Wayland.Wire.Message
 import Text.Printf
 
-data Side = Server | Client deriving (Eq, Show)
-data RecordType = Slot | Signal deriving (Eq, Show)
+data Server
+data Client
 
-newtype Object (c :: Side) i = Object { unObject :: ObjId }
+newtype Object c i = Object { unObject :: ObjId }
 
--- | The type of an object constructor.
-type family Constructor (r :: RecordType) c i m where
-    Constructor Slot   c i m = (Object c i -> m (Slots c i m)) -> m (Object c i)
-    Constructor Signal c i m = Object c i -> m (Slots c i m)
-
--- | A helper type family to prove that 'Constructor' is injective.
-type family UnCons cons where
-    UnCons ((Object c i -> m x) -> m (Object c i)) = P Slot   c i m
-    UnCons ( Object c i -> m x                   ) = P Signal c i m
-
--- | Defines an empty data type used as the proof for 'UnCons'.
-data P (r :: RecordType) (c :: Side) i (m :: * -> *)
-
--- | Changes a return type to '()' for Slots.
-type family RetType (r :: RecordType) a where
-    RetType Signal a = a
-    RetType Slot   a = ()
-
--- | The requests of an interface.
-data family Requests (r :: RecordType) (c :: Side) i :: (* -> *) -> *
- 
--- | The events of an interface.
-data family Events   (r :: RecordType) (c :: Side) i :: (* -> *) -> *
-
--- | Slots are functions that can be called on the object, and the user has to
--- add handlers for them. On the server side the 'Slots' map to the 'Requests',
--- that is called by client code, while on the client side it is the 'Signals',
--- called by server code.
-type family Slots (c :: Side) where
-    Slots Server = Requests Slot Server
-    Slots Client = Events   Slot Client
-
--- | The signals are the outbound interface of the objects. On the server side
--- these map to the 'Events', and on the client side to the 'Requests'. A user
--- can use the 'signals' function to get 'Signals' she can call.
-type family Signals (c :: Side) where
-    Signals Client = Requests Signal Client
-    Signals Server = Events   Signal Server
+type SlotConstructor c i m = (Object c i -> m (Slots c i m)) -> m (Object c i)
+type SignalConstructor c i m = Object c i -> m (Slots c i m)
 
 class Dispatch i c where
+    data Slots   c i :: (* -> *) -> *
+    data Signals c i :: (* -> *) -> *
     dispatch :: MonadDispatch c m => Slots c i m -> Message -> m ()
     signals  :: MonadDispatch c m => Object c i -> Signals c i m
 
@@ -130,25 +88,3 @@ regObject i n f = do
     where
         iface :: Object c i -> i
         iface = undefined
-
--- | Checks that the interface of a constructor matches the expected interface.
-checkCons :: ( Error e
-             , DispatchInterface i
-             , MonadError e m
-             , UnCons (Constructor r c i m) ~ P r c i m
-             )
-          => String                 -- ^ The expected interface name.
-          -> Int                    -- ^ The expected interface version.
-          -> Constructor r c i m    -- ^ The interface constructor.
-          -> m ()
-checkCons name ver cons =
-    unless (interfaceName iface == name && interfaceVersion iface >= ver)
-        . throwError . strMsg
-        $ printf "Interface (%s, %i) does not match expected interface (%s, %i)\n"
-            (interfaceName iface) (interfaceVersion iface) name ver
-    where
-        getIface :: UnCons (Constructor r c i m) ~ P r c i m
-                 => Constructor r c i m
-                 -> i
-        getIface = undefined
-        iface = getIface cons
