@@ -12,12 +12,16 @@ module Graphics.Wayland.Dispatch
     , Dispatch (..)
     , MonadDispatch (..)
     , DispatchInterface (..)
+    , consName
+    , consVer
     , objectFromNewId
     , newObject
+    , maybeNewObject
     , regObject
     )
 where
 
+import Control.Arrow
 import Control.Monad
 import Control.Monad.Error
 import Graphics.Wayland.Types
@@ -41,7 +45,7 @@ class Dispatch i c where
 -- | A monad that supports handling objects.
 class MonadIO m => MonadDispatch c m | m -> c where
     -- | Allocates a new object, but does not add any handlers to it.
-    allocObject :: m (Object c i)
+    allocObject :: m NewId
     -- | Frees an allocated object, removing any handlers.
     freeObject :: Object c i -> m ()
     registerObject :: Object c i -> Slots c i m -> m ()
@@ -58,14 +62,31 @@ class DispatchInterface i where
 objectFromNewId :: NewId -> Object c i
 objectFromNewId = Object . ObjId . unNewId
 
+consInterface :: SignalConstructor c i m -> i
+consInterface _ = undefined
+
+consName :: DispatchInterface i => SignalConstructor c i m -> String
+consName = interfaceName . consInterface
+
+consVer :: DispatchInterface i => SignalConstructor c i m -> Int
+consVer = interfaceVersion . consInterface
+
 -- | Creates a new object, using the given constructor.
 newObject :: MonadDispatch c m
           => (Object c i -> m (Slots c i m))    -- ^ The object constructor.
-          -> m (Object c i)                     -- ^ The new object.
+          -> m (NewId, Object c i)              -- ^ The new object and its Id
 newObject f = do
-    o <- allocObject
+    n <- allocObject
+    let o = objectFromNewId n
     f o >>= registerObject o
-    return o
+    return (n, o)
+
+-- | Creates a new object if a constructor is given.
+maybeNewObject :: MonadDispatch c m
+          => Maybe (Object c i -> m (Slots c i m)) -- ^ The object constructor.
+          -> m (Maybe NewId, Maybe (Object c i))   -- ^ The new object and its Id
+maybeNewObject Nothing     = return (Nothing, Nothing)
+maybeNewObject (Just cons) = liftM (Just *** Just) (newObject cons)
 
 regObject :: (MonadDispatch c m)
           => Maybe (String, Int)

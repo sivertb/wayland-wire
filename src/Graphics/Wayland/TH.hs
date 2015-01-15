@@ -11,6 +11,7 @@ import Control.Applicative
 import Control.Arrow
 import Data.Char
 import Data.Int
+import Data.List
 import Data.Word
 import Graphics.Wayland.Dispatch
 import Graphics.Wayland.Protocol hiding (Type)
@@ -52,6 +53,9 @@ mkNameL = mkName . toCamelL
 mkNameU :: String -> Name
 mkNameU = mkName . toCamelU
 
+intE :: Integral i => i -> Q Exp
+intE = litE . integerL . fromIntegral
+
 -- | Generates an empty type declaration with the given name.
 genEmptyType :: Name -> Q [Dec]
 genEmptyType name = return [ DataD [] name [] [] [] ]
@@ -68,7 +72,6 @@ genDispatchInterfaceInst iface =
             ]
     where
         funC e = [ clause [ wildP ] (normalB e) [] ]
-        intE = litE . integerL . fromIntegral
 
 getRequests :: Interface -> [(String, [P.Type])]
 getRequests = map (reqName &&& (map argType . reqArgs)) . ifaceRequests
@@ -249,7 +252,7 @@ genSingleDispatch iface (i, (n, ts)) = do
         []
 
 genDispatch :: Side -> Interface -> Q Exp
-genDispatch s iface = do
+genDispatch s iface =
     lamE [varP $ mkName "slots", varP $ mkName "msg"] $
         caseE [| msgOp $(varE $ mkName "msg") |]
         ( map (genSingleDispatch iface ) (zip [0..] (getSlots s iface)) ++
@@ -258,8 +261,68 @@ genDispatch s iface = do
     where
         op = mkName "op"
 
+genSignalArg :: P.Type -> Q (Exp -> Exp, [Name], [Exp], [Name])
+genSignalArg t =
+    case t of
+         TypeNew nullable interface -> do
+             newId <- newName "newId"
+             name  <- newName "name"
+             ver   <- newName "ver"
+             obj   <- newName "obj"
+             cons  <- newName "cons"
+
+             let args = case interface of
+                             Nothing -> map VarE [ver, name, newId]
+                             _       -> map VarE [newId]
+                 newObj = if nullable
+                            then AppE (VarE 'maybeNewObject) (VarE cons)
+                            else AppE (VarE 'newObject)      (VarE cons)
+                 func   = InfixE (Just newObj) (VarE $ mkName ">>=") . Just . body
+                 body   = LamE [TupP [VarP newId, VarP obj]] . lete
+                 lete e = case interface of
+                               Nothing -> LetE decs e
+                               _       -> e
+                 decs   = [ ValD (VarP ver ) (NormalB $ AppE (VarE 'consName) (VarE cons)) []
+                          , ValD (VarP name) (NormalB $ AppE (VarE 'consVer ) (VarE cons)) []
+                          ]
+
+             return (func, [cons], args, [obj])
+
+         TypeObject nullable interface -> do
+             obj <- newName "obj"
+             arg <- case interface of
+                         Nothing -> varE obj
+                         _       -> if nullable
+                                      then [| fmap unObject $(varE obj) |]
+                                      else [| unObject $(varE obj) |]
+             return (id, [obj], [arg], [])
+         _ -> (\n -> (id, [n], [VarE n], [])) <$> newName "arg"
+
+genSignalDispatch :: Name -> Integer -> [P.Type] -> Q Exp
+genSignalDispatch obj op ts = do
+    (fs, pats', args', rets') <- unzip4 <$> mapM genSignalArg ts
+
+    let args = concat args'
+        pats = map varP $ concat pats'
+        rets = map varE $ concat rets'
+        ret  = tupE rets
+        msg  = flip (foldl AppE) args <$> [| toMessage $(intE op) (unObject $(varE obj)) |]
+        body = foldl (flip (.)) id fs <$> [| sendMessage $msg >> return $ret |]
+
+    lamE pats body
+
+genSingleSignal :: Name -> Interface -> (Integer, (String, [P.Type])) -> Q (Name, Exp)
+genSingleSignal obj iface (op, (name, ts)) =
+    (fieldName iface name,) <$> genSignalDispatch obj op ts
+
 genSignals :: Side -> Interface -> Q Exp
-genSignals s iface = [| undefined |]
+genSignals s iface = do
+    obj <- newName "obj"
+    lam1E
+        (varP obj)
+        (recConE conName . map (genSingleSignal obj iface) . zip [0..] $ getSignals s iface)
+    where
+        conName = mkNameU $ ifaceName iface ++ "_signals"
 
 genDispatchInstance :: Side -> Interface -> Q [Dec]
 genDispatchInstance s iface =
