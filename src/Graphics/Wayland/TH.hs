@@ -91,13 +91,12 @@ genInterfaceType :: Maybe String -> Q (Type, [Name])
 genInterfaceType = maybe ((VarT &&& (: [])) <$> newName "i") (return . (, []) . ConT . mkNameU)
 
 -- | Generates the type of an object.
-genObjectType :: Side -> Bool -> Maybe String -> Q (Type, [Name])
-genObjectType s n i =
+genObjectType :: Side -> Bool -> Maybe String -> (Type, [Name])
+genObjectType s n =
     first (wrapMaybe n)
-    <$> maybe
-            (return (ConT ''ObjId, []))
-            (return . (, []) . AppT obj . ConT . mkNameU)
-            i
+    . maybe
+        (ConT ''ObjId, [])
+        ((, []) . AppT obj . ConT . mkNameU)
     where
         obj = AppT (ConT ''Object) (ConT $ sideName s)
 
@@ -152,7 +151,7 @@ genArgType rt s t =
          TypeFd         -> (, [], []) <$> [t| Fd        |]
          TypeArray      -> (, [], []) <$> [t| [Word32]  |]
          TypeString n   -> return (wrapMaybe n $ ConT ''String, [], [])
-         TypeObject n i -> (\(a,b) -> (a, b, [])) <$> genObjectType s n i
+         TypeObject n i -> return . (\(a, b) -> (a, b, [])) $ genObjectType s n i
          TypeNew    n i -> genNewType rt s n i
 
 -- | Creates a tuple with the given list of element types.
@@ -191,7 +190,7 @@ genRecord rt s prefix recName args iface =
         conName        = mkNameU $ ifaceName iface ++ prefix
         typeName       = mkNameU $ ifaceName iface
         types          = [ conT $ sideName s
-                         , conT $ typeName
+                         , conT typeName
                          , varT $ mkName "m"
                          ]
         mkField (n, t) = (fieldName iface n, NotStrict, ) <$> genFuncType rt s t
@@ -253,13 +252,17 @@ genSingleDispatch iface (i, (n, ts)) = do
 
 genDispatch :: Side -> Interface -> Q Exp
 genDispatch s iface =
-    lamE [varP $ mkName "slots", varP $ mkName "msg"] $
+    lamE [slotsP, varP $ mkName "msg"] $
         caseE [| msgOp $(varE $ mkName "msg") |]
-        ( map (genSingleDispatch iface ) (zip [0..] (getSlots s iface)) ++
+        ( map (genSingleDispatch iface ) (zip [0..] slots) ++
         [ match (varP op) (normalB [| fail ("Unknown opcode " ++ show $(varE op)) |]) [] ]
         )
     where
         op = mkName "op"
+        slots  = getSlots s iface
+        slotsP = if null slots
+                   then wildP
+                   else varP $ mkName "slots"
 
 genSignalArg :: P.Type -> Q (Exp -> Exp, [Name], [Exp], [Name])
 genSignalArg t =
@@ -319,10 +322,14 @@ genSignals :: Side -> Interface -> Q Exp
 genSignals s iface = do
     obj <- newName "obj"
     lam1E
-        (varP obj)
-        (recConE conName . map (genSingleSignal obj iface) . zip [0..] $ getSignals s iface)
+        (objP obj)
+        (recConE conName . map (genSingleSignal obj iface) $ zip [0..] sigs)
     where
         conName = mkNameU $ ifaceName iface ++ "_signals"
+        sigs    = getSignals s iface
+        objP o  = if null sigs
+                    then wildP
+                    else varP o
 
 genDispatchInstance :: Side -> Interface -> Q [Dec]
 genDispatchInstance s iface =
