@@ -22,13 +22,15 @@ import Language.Haskell.TH
 import System.Posix (Fd)
 import Text.XML.HXT.Core hiding (mkName)
 
-data RecordType = Slot | Signal deriving (Eq, Show)
+data RecordType = Slots | Signals deriving (Eq, Show)
 data Side = Server | Client deriving (Eq, Show)
 
+-- | Applies a function to the first element in a list.
 mapFirst :: (a -> a) -> [a] -> [a]
 mapFirst _ []     = []
 mapFirst f (a:as) = f a : as
 
+-- | Returns the type name associated with the given 'Side'.
 sideName :: Side -> Name
 sideName Client = ''Client
 sideName Server = ''Server
@@ -53,6 +55,7 @@ mkNameL = mkName . toCamelL
 mkNameU :: String -> Name
 mkNameU = mkName . toCamelU
 
+-- | Creates an integer literal expression.
 intE :: Integral i => i -> Q Exp
 intE = litE . integerL . fromIntegral
 
@@ -73,9 +76,11 @@ genDispatchInterfaceInst iface =
     where
         funC e = [ clause [ wildP ] (normalB e) [] ]
 
+-- | Gets the interface's requests.
 getRequests :: Interface -> [(String, [P.Type])]
 getRequests = map (reqName &&& (map argType . reqArgs)) . ifaceRequests
 
+-- | Gets the interface's events.
 getEvents :: Interface -> [(String, [P.Type])]
 getEvents = map (eventName &&& (map argType . eventArgs)) . ifaceEvents
 
@@ -90,10 +95,16 @@ wrapMaybe _    c = c
 genInterfaceType :: Maybe String -> Q (Type, [Name])
 genInterfaceType = maybe ((VarT &&& (: [])) <$> newName "i") (return . (, []) . ConT . mkNameU)
 
--- | Generates the type of an object.
+-- | Generates the type of an 'Object' argument.
+--
+-- The type is 'Object s i' where s is either 'Client' or 'Server' and i is the
+-- object's interface type. If the interface isn't specified, the type will be
+-- 'ObjId'.
+--
+-- If the object is nullable the type will be wrapped in 'Maybe'.
 genObjectType :: Side -> Bool -> Maybe String -> (Type, [Name])
-genObjectType s n =
-    first (wrapMaybe n)
+genObjectType s nullable =
+    first (wrapMaybe nullable)
     . maybe
         (ConT ''ObjId, [])
         ((, []) . AppT obj . ConT . mkNameU)
@@ -128,13 +139,13 @@ genNewType rt s nullable iface = do
         obj  = [t| Object $c $i |]
 
     case rt of
-         Slot ->
+         Slots ->
              (, [], [])
              <$> forallT
                  (map PlainTV ns)
                  (cxt $ map classCxt ns)
                  [t| SlotConstructor $c $i $m |]
-         Signal ->
+         Signals ->
              (, ns, )
              <$> (wrapMaybe nullable <$> [t| SignalConstructor $c $i $m |])
              <*> ((: []) . wrapMaybe nullable <$> obj)
@@ -145,18 +156,18 @@ genNewType rt s nullable iface = do
 genArgType :: RecordType -> Side -> P.Type -> Q (Type, [Name], [Type])
 genArgType rt s t =
     case t of
-         TypeSigned     -> (, [], []) <$> [t| Int32     |]
-         TypeUnsigned   -> (, [], []) <$> [t| Word32    |]
-         TypeFixed      -> (, [], []) <$> [t| Double    |]
-         TypeFd         -> (, [], []) <$> [t| Fd        |]
-         TypeArray      -> (, [], []) <$> [t| [Word32]  |]
-         TypeString n   -> return (wrapMaybe n $ ConT ''String, [], [])
-         TypeObject n i -> return . (\(a, b) -> (a, b, [])) $ genObjectType s n i
+         TypeSigned     -> (, [], [])               <$> [t| Int32     |]
+         TypeUnsigned   -> (, [], [])               <$> [t| Word32    |]
+         TypeFixed      -> (, [], [])               <$> [t| Double    |]
+         TypeFd         -> (, [], [])               <$> [t| Fd        |]
+         TypeArray      -> (, [], [])               <$> [t| [Word32]  |]
+         TypeString n   -> (, [], []) . wrapMaybe n <$> [t| String    |]
+         TypeObject n i -> return . uncurry (,, []) $ genObjectType s n i
          TypeNew    n i -> genNewType rt s n i
 
 -- | Creates a tuple with the given list of element types.
--- The list can be empty, in which case it will create the '()' type.
--- If the list contains a single type, this type is returned.
+--
+-- The list can be empty, in which case the type will simply be '()'.
 mkTuple :: [Type] -> Type
 mkTuple ts = foldl AppT (TupleT $ length ts) ts
 
@@ -164,7 +175,7 @@ mkTuple ts = foldl AppT (TupleT $ length ts) ts
 classCxt :: Name -> PredQ
 classCxt i = classP ''DispatchInterface [varT i]
 
--- | Generates a function type.
+-- | Generates a function type for a record field.
 genFuncType :: RecordType -> Side -> [P.Type] -> Q Type
 genFuncType rt s ts = do
     (ts', is', rs') <- unzip3 <$> mapM (genArgType rt s) ts
@@ -179,15 +190,29 @@ genFuncType rt s ts = do
         (cxt $ map classCxt is)
         (return t)
 
+-- | Returns a record field name given an interface and the function name.
 fieldName :: Interface -> String -> Name
-fieldName iface prefix = mkNameL $ ifaceName iface ++ "_" ++ prefix
+fieldName iface func = mkNameL $ ifaceName iface ++ "_" ++ func
 
-genRecord :: RecordType -> Side -> String -> Name -> [(String, [P.Type])] -> Interface -> Q Dec
-genRecord rt s prefix recName args iface =
-    dataInstD (pure []) recName types [con] []
+-- | Returns the data family name associated with a 'RecordType'.
+recordTypeName :: RecordType -> Name
+recordTypeName Slots   = ''Slots
+recordTypeName Signals = ''Signals
+
+-- | Generates a data family instance for 'Signals' or 'Slots'.
+--
+-- The instance will have a single record constructor, with fields for every
+-- slot or signal function.
+genRecord :: RecordType             -- ^ The record type to generate.
+          -> Side                   -- ^ The 'Side' to generate it for.
+          -> [(String, [P.Type])]   -- ^ The record's fields.
+          -> Interface              -- ^ The interface this record belongs to.
+          -> Q Dec
+genRecord rt s args iface =
+    dataInstD (pure []) (recordTypeName rt) types [con] []
     where
         con            = recC conName $ map mkField args
-        conName        = mkNameU $ ifaceName iface ++ prefix
+        conName        = mkNameU $ ifaceName iface ++ show rt
         typeName       = mkNameU $ ifaceName iface
         types          = [ conT $ sideName s
                          , conT typeName
@@ -195,23 +220,31 @@ genRecord rt s prefix recName args iface =
                          ]
         mkField (n, t) = (fieldName iface n, NotStrict, ) <$> genFuncType rt s t
 
+-- | Returns the slots of an interface.
 getSlots :: Side -> Interface -> [(String, [P.Type])]
 getSlots Server = getRequests
 getSlots Client = getEvents
 
+-- | Returns the signals of an interface.
 getSignals :: Side -> Interface -> [(String, [P.Type])]
 getSignals Server = getEvents
 getSignals Client = getRequests
 
+-- | Generates a slot record for the given interface.
 genSlotsRec :: Side -> Interface -> Q Dec
 genSlotsRec s iface =
-    genRecord Slot s "_slots" ''Slots (getSlots s iface) iface
+    genRecord Slots s (getSlots s iface) iface
 
+-- | Generates a signal record for the given interface.
 genSignalsRec :: Side -> Interface -> Q Dec
 genSignalsRec s iface =
-    genRecord Signal s "_signals" ''Signals (getSignals s iface) iface
+    genRecord Signals s (getSignals s iface) iface
 
-genDispatchArg :: P.Type -> Q ([Name], ExpQ)
+-- | Generates a list of names of arguments to get from the message and an
+-- expression to pass to the function.
+genDispatchArg :: P.Type            -- ^ The type of the function argument.
+               -> Q ([Name], ExpQ)  -- ^ A tuple with arguments from the
+                                    -- message and argument to pass to the function.
 genDispatchArg t =
     case t of
          TypeNew    nullable interface -> do
@@ -237,8 +270,14 @@ genDispatchArg t =
 
          _ -> ((: []) &&& varE) <$> newName "arg"
 
-genSingleDispatch :: Interface -> (Integer, (String, [P.Type])) -> MatchQ
-genSingleDispatch iface (i, (n, ts)) = do
+-- | Generates a single 'MatchQ' clause for a case statement, matching a
+-- specific opcode.
+--
+-- The match clause will be of the form
+-- 'op -> \... -> fieldName slots ...
+-- where fieldName is the record field name for that specific function.
+genDispatchCase :: Interface -> (Integer, (String, [P.Type])) -> MatchQ
+genDispatchCase iface (op, (n, ts)) = do
     (pats, args') <- first concat . unzip <$> mapM genDispatchArg ts
     args          <- sequence args'
 
@@ -246,15 +285,20 @@ genSingleDispatch iface (i, (n, ts)) = do
         field = AppE (VarE $ fieldName iface n) (VarE $ mkName "slots")
 
     match
-        (litP $ IntegerL i)
+        (litP $ IntegerL op)
         (normalB [| fromMessage $(varE $ mkName "msg") $(func) |])
         []
 
+-- | Generates the expression for the 'dispatch' function of a 'Dispatch' instance.
+--
+-- The expression will be a lambda function
+-- '\slots msg -> case msgOp msg of { 0 -> case0; 1 -> case1; _ -> fail "unknown opcode" }
+-- with one case for every possible opcode.
 genDispatch :: Side -> Interface -> Q Exp
 genDispatch s iface =
     lamE [slotsP, varP $ mkName "msg"] $
         caseE [| msgOp $(varE $ mkName "msg") |]
-        ( map (genSingleDispatch iface ) (zip [0..] slots) ++
+        ( map (genDispatchCase iface) (zip [0..] slots) ++
         [ match (varP op) (normalB [| fail ("Unknown opcode " ++ show $(varE op)) |]) [] ]
         )
     where
@@ -264,7 +308,13 @@ genDispatch s iface =
                    then wildP
                    else varP $ mkName "slots"
 
-genSignalArg :: P.Type -> Q (Exp -> Exp, [Name], [Exp], [Name])
+-- | Generates code for a single argument of a signal function.
+--
+-- The function returns a tuple with a function that can add to the functions
+-- body expression, the name of the function argument, a list of expression for
+-- values to add to the message and a list of names of values to add to the
+-- return value.
+genSignalArg :: P.Type -> Q (Exp -> Exp, Name, [Exp], [Name])
 genSignalArg t =
     case t of
          TypeNew nullable interface -> do
@@ -289,7 +339,7 @@ genSignalArg t =
                           , ValD (VarP name) (NormalB $ AppE (VarE 'consVer ) (VarE cons)) []
                           ]
 
-             return (func, [cons], args, [obj])
+             return (func, cons, args, [obj])
 
          TypeObject nullable interface -> do
              obj <- newName "obj"
@@ -298,32 +348,30 @@ genSignalArg t =
                          _       -> if nullable
                                       then [| fmap unObject $(varE obj) |]
                                       else [| unObject $(varE obj) |]
-             return (id, [obj], [arg], [])
-         _ -> (\n -> (id, [n], [VarE n], [])) <$> newName "arg"
+             return (id, obj, [arg], [])
+         _ -> (\n -> (id, n, [VarE n], [])) <$> newName "arg"
 
-genSignalDispatch :: Name -> Integer -> [P.Type] -> Q Exp
-genSignalDispatch obj op ts = do
+-- | Generates a single signal function for the 'signals' function.
+genSignal :: Interface -> Name -> (Integer, (String, [P.Type])) -> Q (Name, Exp)
+genSignal iface obj (op, (name, ts)) = do
     (fs, pats', args', rets') <- unzip4 <$> mapM genSignalArg ts
 
     let args = concat args'
-        pats = map varP $ concat pats'
+        pats = map varP pats'
         rets = map varE $ concat rets'
         ret  = tupE rets
         msg  = flip (foldl AppE) args <$> [| toMessage $(intE op) (unObject $(varE obj)) |]
-        body = foldl (flip (.)) id fs <$> [| sendMessage $msg >> return $ret |]
+        body = foldl (.) id fs <$> [| sendMessage $msg >> return $ret |]
 
-    lamE pats body
+    (fieldName iface name, ) <$> lamE pats body
 
-genSingleSignal :: Name -> Interface -> (Integer, (String, [P.Type])) -> Q (Name, Exp)
-genSingleSignal obj iface (op, (name, ts)) =
-    (fieldName iface name,) <$> genSignalDispatch obj op ts
-
+-- | Generates a function for the 'signals' function of the 'Dispatch' class.
 genSignals :: Side -> Interface -> Q Exp
 genSignals s iface = do
     obj <- newName "obj"
     lam1E
         (objP obj)
-        (recConE conName . map (genSingleSignal obj iface) $ zip [0..] sigs)
+        (recConE conName . map (genSignal iface obj) $ zip [0..] sigs)
     where
         conName = mkNameU $ ifaceName iface ++ "_signals"
         sigs    = getSignals s iface
@@ -331,6 +379,7 @@ genSignals s iface = do
                     then wildP
                     else varP o
 
+-- | Generates an instance for the 'Dispatch' class for the given 'Interface'.
 genDispatchInstance :: Side -> Interface -> Q [Dec]
 genDispatchInstance s iface =
     (: [])
