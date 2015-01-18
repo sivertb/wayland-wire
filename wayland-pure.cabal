@@ -18,7 +18,6 @@ library
                         Graphics.Wayland.Dispatch
                         Graphics.Wayland.Wire
                         Graphics.Wayland.TH
-                        Graphics.Wayland.Test
   other-modules:        Graphics.Wayland.Wire.Message
                         Graphics.Wayland.Wire.Socket
                         Graphics.Wayland.Wire.Decoder

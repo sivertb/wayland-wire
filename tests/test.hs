@@ -1,13 +1,15 @@
 import Control.Applicative
 import Control.Monad
 import System.Exit
+import Test.Api
 import Test.Encode
 import Test.Get
 import Test.Message
 import Test.Socket
 
 tests :: [IO Bool]
-tests = [ getTests
+tests = [ apiTests
+        , getTests
         , messageTests
         , socketTests
         , encodeTests
