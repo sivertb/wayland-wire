@@ -1,10 +1,12 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Test.Socket
 where
 
 import Control.Applicative
 import Control.Concurrent
 import Control.Monad
+import Control.Monad.Reader
 import Data.Maybe
 import Data.List
 import Graphics.Wayland.Wire.Message
@@ -15,19 +17,34 @@ import Test.Message
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
 
-server :: IO MessageLookup -> MVar () -> Message -> IO ()
-server lf fence msg = do
-    ls <- listen lf Nothing
-    putMVar fence ()
+newtype TestM a = TestM (ReaderT MessageLookup IO a)
+    deriving ( Functor
+             , Applicative
+             , Monad
+             , MonadReader MessageLookup
+             , MonadIO
+             )
+
+instance SocketClass TestM where
+    msgLookup = ask
+    sockErr = fail . show
+
+runTestM :: MessageLookup -> TestM a -> IO a
+runTestM lf (TestM tm) = runReaderT tm lf
+
+server :: MVar () -> Message -> TestM ()
+server fence msg = do
+    ls <- listen Nothing
+    liftIO $ putMVar fence ()
     s  <- accept ls
     send s msg
     close s
     close ls
 
-client :: IO MessageLookup -> MVar () -> IO Message
-client lf fence = do
-    takeMVar fence
-    s <- connect lf Nothing
+client :: MVar () -> TestM Message
+client fence = do
+    liftIO $ takeMVar fence
+    s <- connect Nothing
     m <- recv s
     close s
     return m
@@ -95,11 +112,11 @@ prop_sendRecv msg =
     monadicIO $ do
         pre =<< (not . or) <$> mapM (run . fdExists) (msgFds msg)
         (eq, res) <- run $ do
-            let lf  = return (msgLookup msg)
+            let lf  = testMsgLookup msg
                 fds = msgFds msg
             paths <- createFds $ nub fds
             fence <- newEmptyMVar
-            (_, res) <- runSockets (server lf fence msg) (client lf fence)
+            (_, res) <- runSockets (runTestM lf $ server fence msg) (runTestM lf $ client fence)
             eq <- case res of
                        Nothing -> return False
                        Just m  -> cmpMsg msg m

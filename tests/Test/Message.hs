@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Test.Message
     ( messageTests
-    , msgLookup
+    , testMsgLookup
     , genMessageFromTypes
     )
 where
@@ -192,8 +192,8 @@ hasRequests = not . null . ifaceRequests
 hasEventsOrRequests :: Interface -> Bool
 hasEventsOrRequests iface = hasEvents iface || hasRequests iface
 
-msgLookup :: Message -> (ObjId -> OpCode -> Maybe [P.Type])
-msgLookup msg _ _ = Just $ map argToType (msgArgs msg)
+testMsgLookup :: Message -> (ObjId -> OpCode -> Maybe [P.Type])
+testMsgLookup msg _ _ = Just $ map argToType (msgArgs msg)
     where
         argToType arg =
             case arg of
@@ -214,7 +214,7 @@ runPutGet get msg =
 
 -- | Test that Put followed by Get produces the input message.
 prop_putGet :: Message -> Property
-prop_putGet msg = runPutGet (getMsg $ msgLookup msg) msg
+prop_putGet msg = runPutGet (getMsg $ testMsgLookup msg) msg
 
 -- | Test that Put/Get works when the message is generated from a random interface.
 prop_putGetInterface :: Interface -> Property

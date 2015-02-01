@@ -3,6 +3,7 @@ module Graphics.Wayland.Wire
       Message (..)
     -- * Socket
     , Socket
+    , SocketClass (..)
     , listen
     , connect
     , accept
