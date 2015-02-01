@@ -13,6 +13,8 @@ memory in a format the Wayland library can understand is done in the
 "Graphics.Wayland.Protocol.Serialize" module.
 -}
 
+{-# LANGUAGE TemplateHaskell #-}
+
 module Graphics.Wayland.Protocol
     ( Protocol (..)
     , Interface (..)
@@ -28,6 +30,7 @@ where
 
 import Data.Word
 import Text.XML.HXT.Core
+import Language.Haskell.TH.Syntax (Lift (..))
 
 data Protocol =
     Protocol { protoName       :: String
@@ -175,6 +178,16 @@ data Type =
   | TypeObject Bool (Maybe String)
   | TypeNew    Bool (Maybe String)
     deriving (Eq, Show)
+
+instance Lift Type where
+    lift (TypeSigned    ) = [| TypeSigned     |]
+    lift (TypeUnsigned  ) = [| TypeUnsigned   |]
+    lift (TypeFixed     ) = [| TypeFixed      |]
+    lift (TypeFd        ) = [| TypeFd         |]
+    lift (TypeArray     ) = [| TypeArray      |]
+    lift (TypeString n  ) = [| TypeString n   |]
+    lift (TypeObject n i) = [| TypeObject n i |]
+    lift (TypeNew    n i) = [| TypeNew    n i |]
 
 xpType :: PU Type
 xpType =

@@ -59,6 +59,9 @@ mkNameU = mkName . toCamelU
 intE :: Integral i => i -> Q Exp
 intE = litE . integerL . fromIntegral
 
+intP :: Integer -> Q Pat
+intP = litP . IntegerL
+
 -- | Generates an empty type declaration with the given name.
 genEmptyType :: Name -> Q [Dec]
 genEmptyType name = return [ DataD [] name [] [] [] ]
@@ -143,7 +146,7 @@ genNewType rt s nullable iface = do
              (, [], [])
              <$> forallT
                  (map PlainTV ns)
-                 (cxt $ map classCxt ns)
+                 (cxt $ concatMap (classCxt s) ns)
                  [t| SlotConstructor $c $i $m |]
          Signals ->
              (, ns, )
@@ -172,8 +175,10 @@ mkTuple :: [Type] -> Type
 mkTuple ts = foldl AppT (TupleT $ length ts) ts
 
 -- | Returns a class predicate for 'DispatchInterface' for the given name.
-classCxt :: Name -> PredQ
-classCxt i = classP ''DispatchInterface [varT i]
+classCxt :: Side -> Name -> [PredQ]
+classCxt s i = [ classP ''DispatchInterface [varT i]
+               , classP ''Dispatch [conT (sideName s), varT i]
+               ]
 
 -- | Generates a function type for a record field.
 genFuncType :: RecordType -> Side -> [P.Type] -> Q Type
@@ -187,7 +192,7 @@ genFuncType rt s ts = do
 
     forallT
         (map PlainTV is)
-        (cxt $ map classCxt is)
+        (cxt $ concatMap (classCxt s) is)
         (return t)
 
 -- | Returns a record field name given an interface and the function name.
@@ -285,7 +290,7 @@ genDispatchCase iface (op, (n, ts)) = do
         field = AppE (VarE $ fieldName iface n) (VarE $ mkName "slots")
 
     match
-        (litP $ IntegerL op)
+        (intP op)
         (normalB [| fromMessage $(varE $ mkName "msg") $(func) |])
         []
 
@@ -379,15 +384,30 @@ genSignals s iface = do
                     then wildP
                     else varP o
 
+-- | Generates a single match for the case expression in the 'slotTypes' function.
+genSlotTypesMatch :: (String, [P.Type]) -> Integer -> Q Match
+genSlotTypesMatch (_, types) op =
+    match (intP op) (normalB [| Just types |]) []
+
+-- | Generates a function for the 'slotTypes' function of the 'Dispatch' class.
+genSlotTypes :: Side -> Interface -> Q Exp
+genSlotTypes s iface = do
+    op <- newName "op"
+    lam1E (varP op) $
+        caseE (varE op) $
+        zipWith genSlotTypesMatch (getSlots s iface) [0..] ++
+        [ match wildP (normalB [| Nothing |]) [] ]
+
 -- | Generates an instance for the 'Dispatch' class for the given 'Interface'.
 genDispatchInstance :: Side -> Interface -> Q [Dec]
 genDispatchInstance s iface =
     (: [])
-    <$> instanceD (cxt []) [t| Dispatch $i $c |]
+    <$> instanceD (cxt []) [t| Dispatch $c $i |]
         [ genSlotsRec   s iface
         , genSignalsRec s iface
-        , funD 'dispatch [clause [] (normalB $ genDispatch s iface) []]
-        , funD 'signals  [clause [] (normalB $ genSignals  s iface) []]
+        , funD 'dispatch  [clause [     ] (normalB $ genDispatch  s iface) []]
+        , funD 'signals   [clause [     ] (normalB $ genSignals   s iface) []]
+        , funD 'slotTypes [clause [wildP] (normalB $ genSlotTypes s iface) []]
         ]
     where
         c = conT $ sideName s
