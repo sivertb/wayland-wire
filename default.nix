@@ -3,7 +3,7 @@
 cabal.mkDerivation
 ( self:
   { pname = "wayland-pure"
-  ; version = "0.1.0.0"
+  ; version = "0.1.0"
   ; src = filterSource ./.
   ; buildTools = [ cabalInstall ]
   ; buildDepends = [ hxt networkMsg utf8String mtl free ]

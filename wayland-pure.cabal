@@ -1,5 +1,5 @@
 name:                wayland-pure
-version:             0.1.0.0
+version:             0.1.0
 synopsis:            Haskell implementation of the Wayland protocol
 description:
     Implements the Wayland protocol in Haskell
