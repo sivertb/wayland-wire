@@ -117,9 +117,10 @@ instance (AllocLimits c, Functor m, MonadIO m) => MonadDispatch c (W c m) where
              Nothing -> throwError . WErrProto $ "Could not find a dispatcher for object " ++ show (msgObj msg)
              Just h  -> h msg
 
-instance (Functor m, MonadIO m) => SocketClass (W c m) where
+instance (Functor m, MonadIO m) => SocketError (W c m) where
+    sockErr = throwError . WErrIO
+
+instance (Functor m, MonadIO m) => SocketLookup (W c m) where
     msgLookup = do
         m <- gets regObjs
         return $ \obj op -> M.lookup obj m >>= (\f -> f op) . fst
-
-    sockErr = throwError . WErrIO

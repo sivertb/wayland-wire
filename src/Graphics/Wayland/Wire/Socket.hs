@@ -1,6 +1,7 @@
 module Graphics.Wayland.Wire.Socket
     ( Socket
-    , SocketClass (..)
+    , SocketError (..)
+    , SocketLookup (..)
     -- * Sending and receiving data
     , recv
     , send
@@ -33,27 +34,32 @@ import System.IO.Unsafe
 
 newtype Socket = Socket (MVar (S.Socket, Raw))
 
-class (Functor m, MonadIO m) => SocketClass m where
+class (Functor m, MonadIO m) => SocketError m where
+    sockErr :: IOError -> m a
+
+class SocketError m => SocketLookup m where
     msgLookup :: m MessageLookup
-    sockErr   :: IOError -> m a
+
+instance SocketError IO where
+    sockErr = ioError
 
 -- | Lifts an IO computation to the 'W' monad, and catches any IO exceptions.
-catchIO :: SocketClass m => IO a -> m a
+catchIO :: SocketError m => IO a -> m a
 catchIO m = do
     res <- liftIO $ (Right <$> m) `catchIOError` (return . Left)
     case res of
          Right a -> return a
          Left  e -> sockErr e
 
-withSocket :: SocketClass m => Socket -> (S.Socket -> IO b) -> m b
+withSocket :: SocketError m => Socket -> (S.Socket -> IO b) -> m b
 withSocket (Socket mvar) f = catchIO . withMVar mvar $ \(s, _) -> f s
 
-wrapSocket :: SocketClass m => S.Socket -> m Socket
+wrapSocket :: SocketError m => S.Socket -> m Socket
 wrapSocket s = Socket <$> liftIO (newMVar (s, mempty))
 
 -- | Gets the full path of the socket.
 -- This function replicates what wayland does in it's add_socket function.
-socketAddr :: SocketClass m => Maybe String -> m S.SockAddr
+socketAddr :: SocketError m => Maybe String -> m S.SockAddr
 socketAddr name = do
     prefix   <- liftIO $ getEnvDefault "XDG_RUNTIME_DIR" "/tmp"
     envName  <- liftIO $ getEnv "WAYLAND_DISPLAY"
@@ -85,11 +91,11 @@ fdData cmsg = do
     return . bsToFds $ cmsgData cmsg
 
 -- | Creates a new unix socket.
-socket :: SocketClass m => m Socket
+socket :: SocketError m => m Socket
 socket = catchIO (S.socket S.AF_UNIX S.Stream S.defaultProtocol) >>= wrapSocket
 
 -- | Creates and starts listening to a unix socket on the given path.
-listen :: SocketClass m
+listen :: SocketError m
        => Maybe String  -- ^ The path to listen on.
        -> m Socket      -- ^ The new socket.
 listen name = do
@@ -101,7 +107,7 @@ listen name = do
     return sock
 
 -- | Creates and connects to a unix socket on the given path.
-connect :: SocketClass m
+connect :: SocketError m
         => Maybe String -- ^ The path to connect to.
         -> m Socket    -- ^ The new socket
 connect name = do
@@ -113,12 +119,12 @@ connect name = do
 -- | Accepts an incoming connection on the socket.
 -- The new socket inherits the lookup function from the listening socket. This
 -- function will block until someone tries to connect.
-accept :: SocketClass m => Socket -> m Socket
+accept :: SocketError m => Socket -> m Socket
 accept sock = withSocket sock S.accept >>= wrapSocket . fst
 
 -- | Closes a socket. If this is a listening socket it will also remove the
 -- socket file.
-close :: SocketClass m => Socket -> m ()
+close :: SocketError m => Socket -> m ()
 close sock = withSocket sock $ \s -> do
     ls <- S.isListening s
     S.SockAddrUnix path <- S.getSocketName s
@@ -137,13 +143,13 @@ recvLoop sock q = do
          _          -> recvLoop sock p
 
 -- | Receives a message from the socket.
-recv :: SocketClass m => Socket -> m Message
+recv :: SocketLookup m => Socket -> m Message
 recv (Socket mvar) = do
     lf <- msgLookup
     catchIO . modifyMVar mvar $ \(sock, inp) -> recvLoop sock $ pushInput (runIncremental $ getMsg lf) inp
 
 -- | Sends a message on the socket.
-send :: SocketClass m => Socket -> Message -> m ()
+send :: SocketError m => Socket -> Message -> m ()
 send (Socket mvar) msg =
     catchIO . withMVar mvar $ \(sock, _) -> do
         let (Raw bs fds) = runPut $ putMsg msg

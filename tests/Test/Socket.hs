@@ -25,9 +25,11 @@ newtype TestM a = TestM (ReaderT MessageLookup IO a)
              , MonadIO
              )
 
-instance SocketClass TestM where
-    msgLookup = ask
+instance SocketError TestM where
     sockErr = fail . show
+
+instance SocketLookup TestM where
+    msgLookup = ask
 
 runTestM :: MessageLookup -> TestM a -> IO a
 runTestM lf (TestM tm) = runReaderT tm lf
