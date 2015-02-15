@@ -73,8 +73,9 @@ genDispatchInterfaceInst iface =
     <$> instanceD
             (cxt [])
             [t| DispatchInterface $(conT . mkNameU $ ifaceName iface) |]
-            [ funD 'interfaceName    $ funC (stringE $ ifaceName    iface)
-            , funD 'interfaceVersion $ funC (intE    $ ifaceVersion iface)
+            [ funD 'interfaceName    $ funC [| ifaceName    iface |]
+            , funD 'interfaceVersion $ funC [| ifaceVersion iface |]
+            , funD 'interfaceInfo    $ funC [| iface              |]
             ]
     where
         funC e = [ clause [ wildP ] (normalB e) [] ]
@@ -422,9 +423,21 @@ generateInterface s iface =
     , genDispatchInstance s iface
     ]
 
+-- | Generate a function returning the protocol definition.
+generateProtocolRef :: Protocol -> Q [Dec]
+generateProtocolRef p = do
+    ann <- sigD name [t| Protocol |]
+    fun <- funD name [clause [] (normalB [| p |]) []]
+    return [ann, fun]
+    where
+        name = mkNameL $ protoName p ++ "_protocol"
+
 -- | Generates code for a protocol.
 generateProtocol :: Side -> Protocol -> Q [Dec]
-generateProtocol s = fmap concat . mapM (generateInterface s) . protoInterfaces
+generateProtocol s p =
+    (++)
+    <$> generateProtocolRef p
+    <*> fmap concat (mapM (generateInterface s) (protoInterfaces p))
 
 -- | Generates code for a protocol specified in the given XML file.
 generateFromXml :: Side -> FilePath -> Q [Dec]

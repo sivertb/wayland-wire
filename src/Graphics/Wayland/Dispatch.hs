@@ -59,6 +59,7 @@ class MonadIO m => MonadDispatch c m | m -> c where
 class DispatchInterface i where
     interfaceName :: i -> String
     interfaceVersion :: i -> Int
+    interfaceInfo :: i -> P.Interface
 
 -- | Creates an 'Object' from a 'NewId'.
 objectFromNewId :: NewId -> Object c i

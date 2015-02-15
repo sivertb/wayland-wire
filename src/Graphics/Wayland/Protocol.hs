@@ -29,8 +29,10 @@ module Graphics.Wayland.Protocol
 where
 
 import Data.Word
-import Text.XML.HXT.Core
-import Language.Haskell.TH.Syntax (Lift (..))
+import Text.XML.HXT.Core hiding (mkName)
+import Language.Haskell.TH.Lib (litE, integerL)
+import Language.Haskell.TH.Lift (deriveLiftMany, Lift (..))
+import Language.Haskell.TH.Syntax (mkName)
 
 data Protocol =
     Protocol { protoName       :: String
@@ -179,16 +181,6 @@ data Type =
   | TypeNew    Bool (Maybe String)
     deriving (Eq, Show)
 
-instance Lift Type where
-    lift (TypeSigned    ) = [| TypeSigned     |]
-    lift (TypeUnsigned  ) = [| TypeUnsigned   |]
-    lift (TypeFixed     ) = [| TypeFixed      |]
-    lift (TypeFd        ) = [| TypeFd         |]
-    lift (TypeArray     ) = [| TypeArray      |]
-    lift (TypeString n  ) = [| TypeString n   |]
-    lift (TypeObject n i) = [| TypeObject n i |]
-    lift (TypeNew    n i) = [| TypeNew    n i |]
-
 xpType :: PU Type
 xpType =
     xpWrapMaybe ( toType
@@ -277,3 +269,19 @@ xpSummary = xpOption $ xpAttr "summary" xpText
 
 xpSince :: PU (Maybe Int)
 xpSince = xpOption $ xpAttr "since" xpPrim
+
+instance Lift Word32 where
+    lift = litE . integerL . toInteger
+
+$( deriveLiftMany
+   $ map mkName
+   [ "Protocol"
+   , "Interface"
+   , "Request"
+   , "Event"
+   , "Argument"
+   , "Type"
+   , "Enum'"
+   , "Entry"
+   , "Description"
+   ])
