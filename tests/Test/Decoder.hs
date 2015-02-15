@@ -11,14 +11,8 @@ import qualified Data.Binary.Get as G
 import Data.Binary.Put
 import Graphics.Wayland.Wire.Decoder
 import System.Posix
+import Test.Arbitrary ()
 import Test.QuickCheck
-
-instance Arbitrary BS.ByteString where
-    arbitrary = BS.pack <$> arbitrary
-    shrink = map BS.pack . shrink . BS.unpack
-
-instance Arbitrary Fd where
-    arbitrary = fromIntegral <$> (arbitrary :: Gen Word32)
 
 runPut' :: Put -> BS.ByteString
 runPut' = BSL.toStrict . runPut

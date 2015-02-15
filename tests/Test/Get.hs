@@ -11,6 +11,7 @@ import Foreign
 import Graphics.Wayland.Wire.Get
 import Graphics.Wayland.Wire.Raw
 import System.Posix
+import Test.Arbitrary ()
 import Test.QuickCheck
 
 data TestGet =
@@ -18,16 +19,6 @@ data TestGet =
   | TestGetOffset
   | TestGetFail String
   deriving (Show, Eq)
-
-instance Arbitrary BS.ByteString where
-    arbitrary = BS.pack <$> arbitrary
-    shrink = map BS.pack . shrink . BS.unpack
-
-instance Arbitrary Fd where
-    arbitrary = fromIntegral <$> (arbitrary :: Gen Word32)
-
-instance Arbitrary Raw where
-    arbitrary = Raw <$> arbitrary <*> arbitrary
 
 instance Arbitrary TestGet where
     arbitrary =
