@@ -4,13 +4,14 @@ where
 import Control.Applicative
 import Data.Word
 import qualified Data.ByteString as BS
+import Graphics.Wayland.Dispatch
 import Graphics.Wayland.Types
 import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Wire.Raw
 import Graphics.Wayland.Protocol hiding (Argument)
 import qualified Graphics.Wayland.Protocol as P
 import System.Posix
-import Test.QuickCheck
+import Test.QuickCheck hiding (Fixed)
 
 instance Arbitrary Interface where
     arbitrary =
@@ -84,12 +85,12 @@ instance Arbitrary OpCode where
     shrink (OpCode o) = map OpCode (shrink o)
 
 instance Arbitrary ObjId where
-    arbitrary = ObjId <$> arbitrary
-    shrink (ObjId o) = map ObjId (shrink o)
+    arbitrary = ObjId <$> (arbitrary `suchThat` (/= 0))
+    shrink (ObjId o) = filter (/= 0) $ map ObjId (shrink o)
 
 instance Arbitrary NewId where
-    arbitrary = NewId <$> arbitrary
-    shrink (NewId o) = map NewId (shrink o)
+    arbitrary = NewId <$> (arbitrary `suchThat` (/= 0))
+    shrink (NewId o) = filter (/= 0) $ map NewId (shrink o)
 
 instance Arbitrary Message where
     arbitrary =
@@ -103,12 +104,16 @@ instance Arbitrary Fd where
     arbitrary = fromIntegral <$> (choose (0, 1000) :: Gen Word32)
     shrink f = fromIntegral <$> shrink (fromIntegral f :: Word32)
 
+instance Arbitrary Fixed where
+    arbitrary = fromIntegral <$> (arbitrary :: Gen Word32)
+    shrink f  = fromIntegral <$> shrink (fromIntegral f :: Word32)
+
 instance Arbitrary Argument where
     arbitrary =
         oneof [ ArgInt    <$> arbitrary
               , ArgWord   <$> arbitrary
               , ArgFd     <$> arbitrary
-              , ArgFixed . fromIntegral <$> (arbitrary :: Gen Word32)
+              , ArgFixed  <$> arbitrary
               , ArgString <$> arbitrary
               , ArgObject <$> suchThat arbitrary (/= Just 0)
               , ArgNew    <$> suchThat arbitrary (/= Just 0)
@@ -118,7 +123,7 @@ instance Arbitrary Argument where
         case arg of
              ArgInt    i -> ArgInt      <$> shrink i
              ArgWord   w -> ArgWord     <$> shrink w
-             ArgFixed  f -> ArgFixed . fromIntegral <$> shrink (fromIntegral f :: Word32)
+             ArgFixed  f -> ArgFixed    <$> shrink f
              ArgFd     f -> ArgFd       <$> shrink f
              ArgString s -> ArgString   <$> shrink s
              ArgObject o -> ArgObject   <$> filter (/= Just 0) (shrink o)
@@ -131,3 +136,6 @@ instance Arbitrary BS.ByteString where
 
 instance Arbitrary Raw where
     arbitrary = Raw <$> arbitrary <*> arbitrary
+
+instance Arbitrary (Object c i) where
+    arbitrary = Object <$> arbitrary
