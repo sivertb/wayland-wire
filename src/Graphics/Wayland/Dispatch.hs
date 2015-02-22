@@ -32,7 +32,7 @@ import Text.Printf
 data Server
 data Client
 
-newtype Object c i = Object { unObject :: ObjId }
+newtype Object c i = Object { unObject :: ObjId } deriving (Show, Eq, Ord)
 
 type SlotConstructor c i m = (Object c i -> m (Slots c i m)) -> m (Object c i)
 type SignalConstructor c i m = Object c i -> m (Slots c i m)
