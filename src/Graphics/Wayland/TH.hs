@@ -4,6 +4,12 @@
 module Graphics.Wayland.TH
     ( Side (..)
     , generateFromXml
+    , toCamelL
+    , toCamelU
+    , mkNameL
+    , mkNameU
+    , getRequests
+    , getEvents
     )
 where
 
