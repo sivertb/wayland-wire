@@ -105,7 +105,9 @@ instance (AllocLimits c, Functor m, MonadIO m) => MonadDispatch c (W c m) where
         when   alreadyFree . throwError $ strMsg "Trying to free an ID that's already free"
         modify (\s -> s { freeObjs = D.insert objId (freeObjs s) } )
 
-    registerObject obj slots =
+    registerObject obj slots = do
+        exists <- gets (M.member (unObject obj) . regObjs)
+        when exists . throwError . strMsg $ "Trying to register " ++ show obj ++ " which already exists"
         modify (\s -> s { regObjs = M.insert (unObject obj) (slotTypes slots, dispatch slots) (regObjs s) })
 
     sendMessage msg = do
