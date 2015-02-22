@@ -25,7 +25,9 @@ import Graphics.Wayland.Types
 import Graphics.Wayland.Wire
 import qualified Graphics.Wayland.Protocol as P
 import Language.Haskell.TH
+import Language.Haskell.TH.Syntax (addDependentFile)
 import System.Posix (Fd)
+import System.Directory (canonicalizePath)
 import Text.XML.HXT.Core hiding (mkName)
 
 data RecordType = Slots | Signals deriving (Eq, Show)
@@ -448,7 +450,9 @@ generateProtocol s p =
 -- | Generates code for a protocol specified in the given XML file.
 generateFromXml :: Side -> FilePath -> Q [Dec]
 generateFromXml s file = do
-    proto <- runIO . runX $ xunpickleDocument xpickle [withRemoveWS yes] file
+    absPath <- runIO $ canonicalizePath file
+    addDependentFile absPath
+    proto <- runIO . runX $ xunpickleDocument xpickle [withRemoveWS yes] absPath
     case proto of
          [p] -> generateProtocol s p
          _   -> fail $ "Could not unpickle protocol file " ++ file
