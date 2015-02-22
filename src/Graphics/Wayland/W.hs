@@ -8,6 +8,7 @@ module Graphics.Wayland.W
     , WS
     , runW
     , recvAndDispatch
+    , AllocLimits
     )
 where
 
