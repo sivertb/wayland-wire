@@ -60,7 +60,7 @@ instance XmlPickler Protocol where
 data Interface =
     Interface { ifaceDescription :: Maybe Description
               , ifaceName        :: String
-              , ifaceVersion     :: Int
+              , ifaceVersion     :: Word32
               , ifaceRequests    :: [Request]
               , ifaceEvents      :: [Event]
               , ifaceEnums       :: [Enum']

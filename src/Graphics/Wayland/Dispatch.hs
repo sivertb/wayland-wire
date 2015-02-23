@@ -23,6 +23,7 @@ where
 
 import Control.Arrow
 import Control.Monad
+import Data.Word
 import Control.Monad.Error
 import Graphics.Wayland.Types
 import Graphics.Wayland.Wire.Message
@@ -58,7 +59,7 @@ class MonadIO m => MonadDispatch c m | m -> c where
 -- protocol, of an interface.
 class DispatchInterface i where
     interfaceName :: i -> String
-    interfaceVersion :: i -> Int
+    interfaceVersion :: i -> Word32
     interfaceInfo :: i -> P.Interface
 
 -- | Creates an 'Object' from a 'NewId'.
@@ -71,7 +72,7 @@ consInterface _ = undefined
 consName :: DispatchInterface i => SignalConstructor c i m -> String
 consName = interfaceName . consInterface
 
-consVer :: DispatchInterface i => SignalConstructor c i m -> Int
+consVer :: DispatchInterface i => SignalConstructor c i m -> Word32
 consVer = interfaceVersion . consInterface
 
 -- | Creates a new object, using the given constructor.
@@ -92,7 +93,7 @@ maybeNewObject Nothing     = return (Nothing, Nothing)
 maybeNewObject (Just cons) = liftM (Just *** Just) (newObject cons)
 
 regObject :: MonadDispatch c m
-          => Maybe (String, Int)
+          => Maybe (String, Word32)
           -> NewId
           -> forall i . (DispatchInterface i, Dispatch c i)
           => (Object c i -> m (Slots c i m))    -- ^ The object constructor.

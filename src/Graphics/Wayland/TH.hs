@@ -156,7 +156,7 @@ genNewType rt s nullable iface = do
              <$> forallT
                  (map PlainTV ns)
                  (cxt $ concatMap (classCxt s) ns)
-                 [t| SlotConstructor $c $i $m |]
+                 (wrapMaybe nullable <$> [t| SlotConstructor $c $i $m |])
          Signals ->
              (, ns, )
              <$> (wrapMaybe nullable <$> [t| SignalConstructor $c $i $m |])
