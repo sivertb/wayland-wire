@@ -30,8 +30,18 @@
     <request name="req_object">
 		<arg name="object" type="object" interface="one_argument"/>
     </request>
+    <request name="req_nullable_object">
+		<arg name="object" type="object" allow-null="true" interface="one_argument"/>
+    </request>
     <request name="req_new_id">
 		<arg name="new_id" type="new_id" interface="one_argument"/>
+    </request>
+    <request name="req_nullable_new_id">
+		<arg name="new_id" type="new_id" allow-null="true" interface="one_argument"/>
+    </request>
+
+    <request name="req_new_no_interface">
+		<arg name="new_id" type="new_id" />
     </request>
 
     <event name="evt_uint">
@@ -58,8 +68,38 @@
     <event name="evt_object">
 		<arg name="object" type="object" interface="one_argument"/>
     </event>
+    <event name="evt_nullable_object">
+		<arg name="object" type="object" allow-null="true" interface="one_argument"/>
+    </event>
     <event name="evt_new_id">
 		<arg name="new_id" type="new_id" interface="one_argument"/>
     </event>
+    <event name="evt_nullable_new_id">
+		<arg name="new_id" type="new_id" allow-null="true" interface="one_argument"/>
+    </event>
+  </interface>
+
+  <interface name="multi_args" version="1">
+	  <request name="ss">
+		  <arg name="a" type="string" />
+		  <arg name="b" allow-null="true" type="string" />
+	  </request>
+	  <request name="is">
+		  <arg name="a" type="int" />
+		  <arg name="b" allow-null="true" type="string" />
+	  </request>
+	  <request name="uo">
+		  <arg name="a" type="uint" />
+		  <arg name="b" allow-null="true" type="object" interface="multi_args" />
+	  </request>
+	  <request name="ns">
+		  <arg name="a" type="new_id" interface="one_argument" />
+		  <arg name="b" type="string" />
+	  </request>
+	  <request name="ifs">
+		  <arg name="a" type="int" />
+		  <arg name="b" type="fixed" />
+		  <arg name="c" type="string" />
+	  </request>
   </interface>
 </protocol>

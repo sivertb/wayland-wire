@@ -6,6 +6,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.IO.Class
+import Data.Maybe
 import Data.List
 import qualified Graphics.Wayland.Protocol as P
 import Graphics.Wayland.TH
@@ -86,13 +87,31 @@ isNewType :: P.Type -> Bool
 isNewType (P.TypeNew _ _) = True
 isNewType _               = False
 
-zipWithNew :: (Bool -> a) -> [P.Type] -> [a] -> [a]
+zipWithNew :: (Bool -> Maybe String -> a) -> [P.Type] -> [a] -> [a]
 zipWithNew _ []     _  = []
 zipWithNew f (a:as) is =
     case (a, is) of
-         (P.TypeNew n _, _   ) -> f n : zipWithNew f as is
-         (_            , j:js) -> j   : zipWithNew f as js
+         (P.TypeNew n i, _   ) -> f n i : zipWithNew f as is
+         (_            , j:js) -> j     : zipWithNew f as js
          _                     -> error "This should never happen"
+
+objectName :: Bool -> Maybe String -> Name
+objectName server = mkName . (prefix ++) . toCamelU . fromMaybe (P.ifaceName . head $ P.protoInterfaces protocol)
+    where
+        prefix | server    = "S."
+               | otherwise = "C."
+
+signalConsType :: Bool -> Bool -> Maybe String -> Type
+signalConsType server n i =
+    wrapMaybe n
+    $ AppT
+    ( AppT
+      ( AppT (ConT ''SignalConstructor) c )
+      ( ConT $ objectName server i) )
+    ( AppT ( AppT (ConT ''W) c ) (ConT ''IO) )
+    where
+        c | server    = ConT ''Server
+          | otherwise = ConT ''Client
 
 genReceiver :: Bool -> Name -> String -> (String, [P.Type]) -> Q Dec
 genReceiver server r obj (func, args) = do
@@ -112,7 +131,7 @@ genReceiver server r obj (func, args) = do
             |]
         recvFunc var input =
             lamE
-                (zipWithNew (const wildP) args (map varP input))
+                (zipWithNew (\_ _  -> wildP) args (map varP input))
                 [| liftIO $ putMVar $(varE var) $(tupE (zipWith mkTupVar input (filter (not . isNewType) args))) |]
         mkTupVar i (P.TypeObject True  _) = [| fmap (Object . unObject) $(varE i) |]
         mkTupVar i (P.TypeObject False _) = [| Object . unObject $ $(varE i) |]
@@ -140,8 +159,9 @@ genSender server s obj (func, args) = do
     funD s [ clause (map varP (objId:input)) (normalB (return $ body signal field (zipWithNew newArg args (map VarE input)))) [] ]
     where
         body signal field as = foldl AppE (VarE field) (signal : zipWithFixed (AppE $ VarE 'fixedToDouble) args as)
-        newArg True  = AppE (ConE 'Just) dummyCons
-        newArg False = dummyCons
+        newArg True  i = newArgSig True i  $ AppE (ConE 'Just) dummyCons
+        newArg False i = newArgSig False i $ dummyCons
+        newArgSig n i v = SigE v $ signalConsType server n i
         dummyCons = LamE [WildP] $ AppE (VarE 'return) (VarE 'undefined)
 
 genTest :: Bool -> String -> (String, [P.Type]) -> Q (Name, Dec)
