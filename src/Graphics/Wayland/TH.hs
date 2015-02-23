@@ -4,6 +4,7 @@
 module Graphics.Wayland.TH
     ( Side (..)
     , generateFromXml
+    , wrapMaybe
     , toCamelL
     , toCamelU
     , mkNameL
