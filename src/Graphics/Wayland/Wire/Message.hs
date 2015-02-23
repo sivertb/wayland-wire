@@ -98,13 +98,19 @@ fixedToDouble = (/ 256) . fromIntegral . unFixed
 doubleToFixed :: Double -> Fixed
 doubleToFixed = Fixed . round . (* 256)
 
+expandNew :: P.Type -> [P.Type]
+expandNew t =
+    case t of
+         TypeNew _ Nothing -> [TypeString False, TypeUnsigned, t]
+         _                 -> [t]
+
 getMsg :: MessageLookup -> Get Message
 getMsg lf = do
     senderId <- ObjId <$> getWord32
     word2    <- getWord32
     let size  = word2 `shiftR` 16
         op    = OpCode .fromIntegral $ word2 .&. 0xffff
-        margs = lf senderId op
+        margs = concatMap expandNew <$> lf senderId op
 
     args <- case margs of
                  Just as -> mapM getArg as
