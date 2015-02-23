@@ -37,23 +37,27 @@ getLookup iface evt =
         idx (a:_ ) 0 = Just a
         idx (_:as) n = idx as (n - 1)
 
-genArg :: P.Type -> Gen Argument
+genArg :: P.Type -> [ Gen Argument ]
 genArg t =
     case t of
-         TypeSigned     -> ArgInt       <$> arbitrary
-         TypeUnsigned   -> ArgWord      <$> arbitrary
-         TypeFixed      -> ArgFixed . fromIntegral <$> (arbitrary :: Gen Word32)
-         TypeFd         -> ArgFd    . fromIntegral <$> (arbitrary :: Gen Word32)
-         TypeArray      -> ArgArray     <$> arbitrary
-         TypeString n   -> ArgString    <$> marb n
-         TypeObject n _ -> ArgObject    <$> suchThat (marb n) (/= Just 0)
-         TypeNew    n _ -> ArgNew       <$> suchThat (marb n) (/= Just 0)
+         TypeSigned           -> [ ArgInt       <$> arbitrary                            ]
+         TypeUnsigned         -> [ ArgWord      <$> arbitrary                            ]
+         TypeFixed            -> [ ArgFixed . fromIntegral <$> (arbitrary :: Gen Word32) ]
+         TypeFd               -> [ ArgFd    . fromIntegral <$> (arbitrary :: Gen Word32) ]
+         TypeArray            -> [ ArgArray     <$> arbitrary                            ]
+         TypeString n         -> [ ArgString    <$> marb n                               ]
+         TypeObject n _       -> [ ArgObject    <$> marb n                               ]
+         TypeNew    n (Just _)-> [ ArgNew       <$> marb n                               ]
+         TypeNew    n Nothing -> [ ArgString    <$> marb False
+                                 , ArgWord      <$> arbitrary
+                                 , ArgNew       <$> marb n
+                                 ]
     where
         marb True  = arbitrary
         marb False = Just <$> arbitrary
 
 genMessageFromTypes :: OpCode -> ObjId -> [P.Type] -> Gen Message
-genMessageFromTypes op obj ts = Message op obj <$> mapM genArg ts
+genMessageFromTypes op obj ts = Message op obj <$> sequence (concatMap genArg ts)
 
 genMessageFromInterface :: Interface -> Gen (Message, Bool)
 genMessageFromInterface iface = do
@@ -90,9 +94,9 @@ testMsgLookup msg _ _ = Just $ map argToType (msgArgs msg)
                  ArgFd     _ -> TypeFd
                  ArgString n -> TypeString (isNothing n)
                  ArgObject n -> TypeObject (isNothing n) (Just "")
-                 ArgNew    n -> TypeNew    (isNothing n) (Just "") 
+                 ArgNew    n -> TypeNew    (isNothing n) (Just "")
                  ArgArray  _ -> TypeArray
-        
+
 runPutGet :: Get Message -> Message -> Property
 runPutGet get msg =
     let inp@(Raw bs _) = runPut $ putMsg msg
