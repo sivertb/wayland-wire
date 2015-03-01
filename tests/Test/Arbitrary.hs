@@ -8,8 +8,7 @@ import Graphics.Wayland.Dispatch
 import Graphics.Wayland.Types
 import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Wire.Raw
-import Graphics.Wayland.Protocol hiding (Argument)
-import qualified Graphics.Wayland.Protocol as P
+import Graphics.Wayland.Protocol
 import System.Posix
 import Test.QuickCheck hiding (Fixed)
 
@@ -34,9 +33,9 @@ instance Arbitrary Request where
 instance Arbitrary Description where
     arbitrary = Description <$> arbitrary <*> arbitrary
 
-instance Arbitrary P.Argument where
+instance Arbitrary Argument where
     arbitrary =
-        P.Argument
+        Argument
         <$> arbitrary
         <*> arbitrary
         <*> arbitrary
@@ -108,7 +107,7 @@ instance Arbitrary Fixed where
     arbitrary = fromIntegral <$> (arbitrary :: Gen Word32)
     shrink f  = fromIntegral <$> shrink (fromIntegral f :: Word32)
 
-instance Arbitrary Argument where
+instance Arbitrary MsgArg where
     arbitrary =
         oneof [ ArgInt    <$> arbitrary
               , ArgWord   <$> arbitrary

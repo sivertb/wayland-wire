@@ -13,6 +13,7 @@ received on Unix sockets.
 module Graphics.Wayland.Wire
     ( -- * Message
       Message (..)
+    , MsgArg (..)
     -- * Socket
     , Socket
     , SocketError (..)

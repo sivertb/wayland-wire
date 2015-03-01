@@ -20,10 +20,10 @@ import Graphics.Wayland.Wire.Message
 import System.Posix
 
 class Encodable a where
-    encode :: OpCode -> ObjId -> [Argument] -> a
+    encode :: OpCode -> ObjId -> [MsgArg] -> a
 
 class Decodable a b m where
-    decode :: [Argument] -> Maybe String -> a -> m (Either String b)
+    decode :: [MsgArg] -> Maybe String -> a -> m (Either String b)
 
 instance Encodable Message where
     encode op obj = Message op obj . reverse
@@ -46,8 +46,8 @@ instance (ArgType a, Decodable b c m) => Decodable (a -> b) c m where
              Just x  -> decode as err (m x)
 
 class ArgType a where
-    toArg   :: a -> Argument
-    fromArg :: Argument -> Maybe a
+    toArg   :: a -> MsgArg
+    fromArg :: MsgArg -> Maybe a
 
 instance ArgType String where
     toArg = ArgString . Just

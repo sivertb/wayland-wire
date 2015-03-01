@@ -2,7 +2,7 @@
 module Graphics.Wayland.Wire.Message
     ( MessageLookup
     , Message (..)
-    , Argument (..)
+    , MsgArg (..)
     , getMsg
     , putMsg
     , Fixed
@@ -18,7 +18,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as UTF8
 import Data.Int
 import Data.Word
-import Graphics.Wayland.Protocol hiding (Argument)
+import Graphics.Wayland.Protocol
 import Graphics.Wayland.Wire.Get
 import Graphics.Wayland.Wire.Put
 import qualified Graphics.Wayland.Protocol as P
@@ -33,11 +33,11 @@ type MessageLookup = ObjId -> OpCode -> Maybe [P.Type]
 data Message =
     Message { msgOp   :: OpCode
             , msgObj  :: ObjId
-            , msgArgs :: [Argument]
+            , msgArgs :: [MsgArg]
             }
     deriving (Show, Eq)
 
-data Argument =
+data MsgArg =
     ArgInt    Int32
   | ArgWord   Word32
   | ArgFixed  Fixed
@@ -80,7 +80,7 @@ getId = let f 0 = Nothing
             f x = Just x
         in  f <$> getWord32
 
-getArg :: P.Type -> Get Argument
+getArg :: P.Type -> Get MsgArg
 getArg t =
     case t of
          TypeSigned     -> ArgInt    <$> getInt32
@@ -123,7 +123,7 @@ getMsg lf = do
 
     return $ Message op senderId args
 
-argLength :: Argument -> Word32
+argLength :: MsgArg -> Word32
 argLength arg =
     case arg of
          ArgString s -> fromIntegral $ maybe 4 strLen s
@@ -160,7 +160,7 @@ putArray as = do
     putWord32 . fromIntegral $ length as * 4
     mapM_ putWord32 as
 
-putArg :: Argument -> Put
+putArg :: MsgArg -> Put
 putArg arg =
     case arg of
          ArgWord   u -> putWord32 u

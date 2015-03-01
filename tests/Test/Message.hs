@@ -15,8 +15,7 @@ import Graphics.Wayland.Wire.Get
 import Graphics.Wayland.Wire.Put
 import Graphics.Wayland.Wire.Raw
 import Graphics.Wayland.Wire.Message
-import Graphics.Wayland.Protocol hiding (Argument)
-import qualified Graphics.Wayland.Protocol as P
+import Graphics.Wayland.Protocol
 import Graphics.Wayland.Types
 import Test.Arbitrary ()
 import Test.QuickCheck
@@ -27,7 +26,7 @@ instance (Eq a) => Eq (Decoder a) where
     (Partial _ ) == (Partial _ ) = True
     _            == _            = False
 
-getLookup :: Interface -> Bool -> (ObjId -> OpCode -> Maybe [P.Type])
+getLookup :: Interface -> Bool -> (ObjId -> OpCode -> Maybe [Type])
 getLookup iface evt =
     case evt of
          False -> \_ -> fmap (map argType . reqArgs)   . idx (ifaceRequests iface)
@@ -37,7 +36,7 @@ getLookup iface evt =
         idx (a:_ ) 0 = Just a
         idx (_:as) n = idx as (n - 1)
 
-genArg :: P.Type -> [ Gen Argument ]
+genArg :: Type -> [ Gen MsgArg ]
 genArg t =
     case t of
          TypeSigned           -> [ ArgInt       <$> arbitrary                            ]
@@ -56,7 +55,7 @@ genArg t =
         marb True  = arbitrary
         marb False = Just <$> arbitrary
 
-genMessageFromTypes :: OpCode -> ObjId -> [P.Type] -> Gen Message
+genMessageFromTypes :: OpCode -> ObjId -> [Type] -> Gen Message
 genMessageFromTypes op obj ts = Message op obj <$> sequence (concatMap genArg ts)
 
 genMessageFromInterface :: Interface -> Gen (Message, Bool)
@@ -83,7 +82,7 @@ hasRequests = not . null . ifaceRequests
 hasEventsOrRequests :: Interface -> Bool
 hasEventsOrRequests iface = hasEvents iface || hasRequests iface
 
-testMsgLookup :: Message -> (ObjId -> OpCode -> Maybe [P.Type])
+testMsgLookup :: Message -> (ObjId -> OpCode -> Maybe [Type])
 testMsgLookup msg _ _ = Just $ map argToType (msgArgs msg)
     where
         argToType arg =

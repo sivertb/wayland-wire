@@ -70,7 +70,7 @@ msgFds = mapMaybe argToFd . msgArgs
         argToFd (ArgFd f) = Just f
         argToFd _         = Nothing
 
-cmpArg :: Argument -> Argument -> IO Bool
+cmpArg :: MsgArg -> MsgArg -> IO Bool
 cmpArg (ArgFd fdA) (ArgFd fdB) = compareFds fdA fdB
 cmpArg a           b           = return $ a == b
 
