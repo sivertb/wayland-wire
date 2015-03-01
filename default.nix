@@ -2,7 +2,7 @@
 
 cabal.mkDerivation
 ( self:
-  { pname = "wayland-pure"
+  { pname = "wayland-wire"
   ; version = "0.1.0"
   ; src = filterSource ./.
   ; buildTools = [ cabalInstall_1_20_0_6 ]

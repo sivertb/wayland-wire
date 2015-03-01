@@ -1,8 +1,8 @@
-name:                wayland-pure
+name:                wayland-wire
 version:             0.1.0
-synopsis:            Haskell implementation of the Wayland protocol
+synopsis:            Haskell implementation of the Wayland wire protocol
 description:
-    Implements the Wayland protocol in Haskell
+    Implements the Wayland wire protocol in Haskell.
 license:             GPL
 license-file:        LICENSE
 author:              Sivert Berg
