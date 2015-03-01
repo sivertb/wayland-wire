@@ -195,7 +195,7 @@ xpType =
 
         toType (typeName, interface, allowNull) =
             case typeName of
-                 "int"      -> Just $ TypeUnsigned
+                 "int"      -> Just $ TypeSigned
                  "uint"     -> Just $ TypeUnsigned
                  "fixed"    -> Just $ TypeFixed
                  "fd"       -> Just $ TypeFd
