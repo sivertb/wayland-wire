@@ -14,6 +14,10 @@ module Graphics.Wayland.Wire
     ( -- * Message
       Message (..)
     , MsgArg (..)
+    -- * Fixed
+    , Fixed
+    , fixedToDouble
+    , doubleToFixed
     -- * Socket
     , Socket
     , SocketError (..)
