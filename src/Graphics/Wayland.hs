@@ -17,6 +17,7 @@ module Graphics.Wayland
     , module Graphics.Wayland.W
 
     -- * Scanner
+    , Side (..)
     , generateFromXml
     )
 where

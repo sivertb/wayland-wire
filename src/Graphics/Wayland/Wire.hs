@@ -29,6 +29,7 @@ module Graphics.Wayland.Wire
     , fromMessage
     , Encodable
     , Decodable
+    , ArgType
     )
 where
 
