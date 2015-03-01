@@ -3,6 +3,7 @@ module Graphics.Wayland.Types
     ( ObjId (..)
     , NewId (..)
     , OpCode (..)
+    , WordEnum (..)
     , newFromObj
     )
 where
@@ -15,6 +16,14 @@ newtype NewId = NewId { unNewId :: Word32 }
     deriving (Show, Eq, Ord, Enum, Num)
 newtype OpCode = OpCode { unOpCode :: Word16 }
     deriving (Show, Eq, Ord, Enum, Num)
+
+class WordEnum w where
+    toWordEnum :: Word32 -> w
+    fromWordEnum :: w -> Word32
+
+instance WordEnum Word32 where
+    toWordEnum = id
+    fromWordEnum = id
 
 newFromObj :: ObjId -> NewId
 newFromObj = NewId . unObjId

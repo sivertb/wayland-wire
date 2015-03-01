@@ -69,8 +69,8 @@ mkNameU = mkName . toCamelU
 intE :: Integral i => i -> Q Exp
 intE = litE . integerL . fromIntegral
 
-intP :: Integer -> Q Pat
-intP = litP . IntegerL
+intP :: Integral i => i -> Q Pat
+intP = litP . IntegerL . fromIntegral
 
 -- | Generates an empty type declaration with the given name.
 genEmptyType :: Name -> Q [Dec]
@@ -116,14 +116,20 @@ genInterfaceType = maybe ((VarT &&& (: [])) <$> newName "i") (return . (, []) . 
 -- 'ObjId'.
 --
 -- If the object is nullable the type will be wrapped in 'Maybe'.
-genObjectType :: Side -> Bool -> Maybe String -> (Type, [Name])
+genObjectType :: Side -> Bool -> Maybe String -> Type
 genObjectType s nullable =
-    first (wrapMaybe nullable)
+    wrapMaybe nullable
     . maybe
-        (ConT ''ObjId, [])
-        ((, []) . AppT obj . ConT . mkNameU)
+        (ConT ''ObjId)
+        (AppT obj . ConT . mkNameU)
     where
         obj = AppT (ConT ''Object) (ConT $ sideName s)
+
+-- | Returns a class predicate for 'DispatchInterface' for the given name.
+classCxt :: Side -> Name -> [PredQ]
+classCxt s i = [ classP ''DispatchInterface [varT i]
+               , classP ''Dispatch [conT (sideName s), varT i]
+               ]
 
 -- | Generates the type of a new object.
 --
@@ -143,7 +149,7 @@ genObjectType s nullable =
 --
 -- and 'i' is either a type variable or a specific interface. The new object is
 -- also added to the return type of the function.
-genNewType :: RecordType -> Side -> Bool -> Maybe String -> Q (Type, [Name], [Type])
+genNewType :: RecordType -> Side -> Bool -> Maybe String -> Q (Type, [(Name, [PredQ])], [Type])
 genNewType rt s nullable iface = do
     (it, ns) <- genInterfaceType iface
 
@@ -160,23 +166,36 @@ genNewType rt s nullable iface = do
                  (cxt $ concatMap (classCxt s) ns)
                  (wrapMaybe nullable <$> [t| SlotConstructor $c $i $m |])
          Signals ->
-             (, ns, )
+             (, map (id &&& classCxt s) ns, )
              <$> (wrapMaybe nullable <$> [t| SignalConstructor $c $i $m |])
              <*> ((: []) . wrapMaybe nullable <$> obj)
 
+-- | Generates the type of TypeUnsigned arguments.
+--
+-- On Slots it's simply 'Word32', but on signals we'll allow arbitrary 'WordEnum'
+-- values.
+genWordType :: RecordType -> Q (Type, [(Name, [PredQ])], [Type])
+genWordType rt =
+    case rt of
+         Slots   -> (, [], []) <$> [t| Word32 |]
+         Signals -> do
+             e <- newName "e"
+             return (VarT e, [(e, [classP ''WordEnum [varT e]])], [])
+
 -- | Generates the type of a single function argument, returning both the type,
--- any type variables it contains that needs too be caught and optionally a
--- list of types to add to the function's return value.
-genArgType :: RecordType -> Side -> P.Type -> Q (Type, [Name], [Type])
+-- any type variables it contains that needs too be caught, predicates that
+-- must be fulfilled and optionally a list of types to add to the function's
+-- return value.
+genArgType :: RecordType -> Side -> P.Type -> Q (Type, [(Name, [PredQ])], [Type])
 genArgType rt s t =
     case t of
          TypeSigned     -> (, [], [])               <$> [t| Int32     |]
-         TypeUnsigned   -> (, [], [])               <$> [t| Word32    |]
          TypeFixed      -> (, [], [])               <$> [t| Double    |]
          TypeFd         -> (, [], [])               <$> [t| Fd        |]
          TypeArray      -> (, [], [])               <$> [t| [Word32]  |]
          TypeString n   -> (, [], []) . wrapMaybe n <$> [t| String    |]
-         TypeObject n i -> return . uncurry (,, []) $ genObjectType s n i
+         TypeObject n i -> return . (, [], []) $ genObjectType s n i
+         TypeUnsigned   -> genWordType rt
          TypeNew    n i -> genNewType rt s n i
 
 -- | Creates a tuple with the given list of element types.
@@ -184,12 +203,6 @@ genArgType rt s t =
 -- The list can be empty, in which case the type will simply be '()'.
 mkTuple :: [Type] -> Type
 mkTuple ts = foldl AppT (TupleT $ length ts) ts
-
--- | Returns a class predicate for 'DispatchInterface' for the given name.
-classCxt :: Side -> Name -> [PredQ]
-classCxt s i = [ classP ''DispatchInterface [varT i]
-               , classP ''Dispatch [conT (sideName s), varT i]
-               ]
 
 -- | Generates a function type for a record field.
 genFuncType :: RecordType -> Side -> [P.Type] -> Q Type
@@ -202,8 +215,8 @@ genFuncType rt s ts = do
         t   = foldr (\a b -> AppT (AppT ArrowT a) b) ret ts'
 
     forallT
-        (map PlainTV is)
-        (cxt $ concatMap (classCxt s) is)
+        (map (PlainTV . fst) is)
+        (cxt $ concatMap snd is)
         (return t)
 
 -- | Returns a record field name given an interface and the function name.
@@ -365,6 +378,11 @@ genSignalArg t =
                                       then [| fmap unObject $(varE obj) |]
                                       else [| unObject $(varE obj) |]
              return (id, obj, [arg], [])
+
+         TypeUnsigned -> do
+             e <- newName "e"
+             (id, e,, []) . (:[]) <$> [| fromWordEnum $(varE e) |]
+
          _ -> (\n -> (id, n, [VarE n], [])) <$> newName "arg"
 
 -- | Generates a single signal function for the 'signals' function.
@@ -424,6 +442,53 @@ genDispatchInstance s iface =
         c = conT $ sideName s
         i = conT . mkNameU $ ifaceName iface
 
+-- | Generates code for a single enum.
+genEnum :: Interface -> Enum' -> Q [Dec]
+genEnum iface en =
+    (\a b c d -> [a, b, c, d])
+    <$> dataD (cxt []) datName [] (map (\v -> normalC (valName v) []) (enumValues en)) [''Show, ''Eq, ''Ord]
+    <*> instanceD (cxt []) [t| Enum $(conT datName) |]
+        [ caseD 'succ
+        $ zipWith (\pat expr -> match pat (normalB expr) [])
+          (map (flip conP [] . snd) vals)
+          (map (conE . snd) (tail vals) ++ [ [| error "succ called on last enum value" |] ])
+
+        , caseD 'pred
+        $ zipWith (\pat expr -> match pat (normalB expr) [])
+          (map (flip conP [] . snd) vals)
+          ([| error "pred called on first enum value" |] : (map (conE . snd) vals))
+
+        , caseD 'toEnum
+        $  map (\(val, name) -> match (intP val) (normalB $ conE name) []) vals
+        ++ [ match wildP (normalB [| error "toEnum - value is out of range" |]) [] ]
+
+        , caseD 'fromEnum
+        $ map (\(val, name) -> match (conP name []) (normalB $ intE val) []) vals
+        ]
+    <*> instanceD (cxt []) [t| Bounded $(conT datName) |]
+        [ funD 'minBound [clause [] (normalB (conE . snd $ head vals)) []]
+        , funD 'maxBound [clause [] (normalB (conE . snd $ last vals)) []]
+        ]
+    <*> instanceD (cxt []) [t| WordEnum $(conT datName) |]
+        [ caseD 'toWordEnum
+        $  map (\(val, name) -> match (intP val) (normalB $ conE name) []) vals
+        ++ [ match wildP (normalB [| error "toWordEnum - value is out of range" |]) [] ]
+
+        , caseD 'fromWordEnum
+        $ map (\(val, name) -> match (conP name []) (normalB $ intE val) []) vals
+        ]
+    where
+        i          = mkName "i"
+        caseD n ms = funD n [clause [varP i] (normalB (caseE (varE i) ms)) []]
+        vals       = sort . map (entryValue &&& valName) $ enumValues en
+        prefix     = ifaceName iface ++ "_" ++ enumName en
+        datName    = mkNameU $ prefix
+        valName    = mkNameU . (prefix ++) . ("_" ++) . entryName
+
+-- | Generates code for all enums in an interface.
+genEnums :: Interface -> Q [Dec]
+genEnums iface = concat <$> mapM (genEnum iface) (ifaceEnums iface)
+
 -- | Generates all the code for an interface.
 generateInterface :: Side -> Interface -> Q [Dec]
 generateInterface s iface =
@@ -431,6 +496,7 @@ generateInterface s iface =
     [ genEmptyType . mkName . toCamelU $ ifaceName iface
     , genDispatchInterfaceInst iface
     , genDispatchInstance s iface
+    , genEnums iface
     ]
 
 -- | Generate a function returning the protocol definition.
