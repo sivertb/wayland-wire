@@ -77,6 +77,12 @@
     <event name="evt_nullable_new_id">
 		<arg name="new_id" type="new_id" allow-null="true" interface="one_argument"/>
     </event>
+
+    <enum name="enum">
+        <entry name="zero" value="0" />
+        <entry name="one" value="1" />
+        <entry name="three" value="3" />
+    </enum>
   </interface>
 
   <interface name="multi_args" version="1">

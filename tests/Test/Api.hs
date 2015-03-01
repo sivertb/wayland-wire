@@ -62,6 +62,26 @@ prop_newReq w = monadicIO $ do
 
             return (unObject new, w')
 
+instance Arbitrary C.OneArgumentEnum where
+    arbitrary = elements [ C.OneArgumentEnumZero
+                         , C.OneArgumentEnumOne
+                         , C.OneArgumentEnumThree
+                         ]
+
+-- | Checks that it's possible to pass an Enum to a signal.
+prop_enum :: ObjId -> C.OneArgumentEnum -> Property
+prop_enum obj e = monadicIO $ do
+    (s, _) <- runTest server client
+    stop $ s === fromIntegral (fromEnum e)
+    where
+        server = do
+            mvar <- liftIO newEmptyMVar
+            registerObject (Object obj) (S.OneArgumentSlots { S.oneArgumentReqUint = liftIO . putMVar mvar })
+            recvAndDispatch
+            liftIO $ readMVar mvar
+
+        client = C.oneArgumentReqUint (signals $ Object obj) e
+
 return []
 apiTests :: IO Bool
 apiTests =
