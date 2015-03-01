@@ -128,7 +128,7 @@ genObjectType s nullable =
 -- | Returns a class predicate for 'DispatchInterface' for the given name.
 classCxt :: Side -> Name -> [PredQ]
 classCxt s i = [ classP ''DispatchInterface [varT i]
-               , classP ''Dispatch [conT (sideName s), varT i]
+               , classP ''Dispatchable [conT (sideName s), varT i]
                ]
 
 -- | Generates the type of a new object.
@@ -318,7 +318,7 @@ genDispatchCase iface (op, (n, ts)) = do
         (normalB [| fromMessage $(varE $ mkName "msg") $(func) |])
         []
 
--- | Generates the expression for the 'dispatch' function of a 'Dispatch' instance.
+-- | Generates the expression for the 'dispatch' function of a 'Dispatchable' instance.
 --
 -- The expression will be a lambda function
 -- '\slots msg -> case msgOp msg of { 0 -> case0; 1 -> case1; _ -> fail "unknown opcode" }
@@ -399,7 +399,7 @@ genSignal iface obj (op, (name, ts)) = do
 
     (fieldName iface name, ) <$> lamE pats body
 
--- | Generates a function for the 'signals' function of the 'Dispatch' class.
+-- | Generates a function for the 'signals' function of the 'Dispatchable' class.
 genSignals :: Side -> Interface -> Q Exp
 genSignals s iface = do
     obj <- newName "obj"
@@ -418,7 +418,7 @@ genSlotTypesMatch :: (String, [P.Type]) -> Integer -> Q Match
 genSlotTypesMatch (_, types) op =
     match (intP op) (normalB [| Just types |]) []
 
--- | Generates a function for the 'slotTypes' function of the 'Dispatch' class.
+-- | Generates a function for the 'slotTypes' function of the 'Dispatchable' class.
 genSlotTypes :: Side -> Interface -> Q Exp
 genSlotTypes s iface = do
     op <- newName "op"
@@ -427,11 +427,11 @@ genSlotTypes s iface = do
         zipWith genSlotTypesMatch (getSlots s iface) [0..] ++
         [ match wildP (normalB [| Nothing |]) [] ]
 
--- | Generates an instance for the 'Dispatch' class for the given 'Interface'.
-genDispatchInstance :: Side -> Interface -> Q [Dec]
-genDispatchInstance s iface =
+-- | Generates an instance for the 'Dispatchable' class for the given 'Interface'.
+genDispatchableInstance :: Side -> Interface -> Q [Dec]
+genDispatchableInstance s iface =
     (: [])
-    <$> instanceD (cxt []) [t| Dispatch $c $i |]
+    <$> instanceD (cxt []) [t| Dispatchable $c $i |]
         [ genSlotsRec   s iface
         , genSignalsRec s iface
         , funD 'dispatch  [clause [     ] (normalB $ genDispatch  s iface) []]
@@ -495,7 +495,7 @@ generateInterface s iface =
     concat <$> sequence
     [ genEmptyType . mkName . toCamelU $ ifaceName iface
     , genDispatchInterfaceInst iface
-    , genDispatchInstance s iface
+    , genDispatchableInstance s iface
     , genEnums iface
     ]
 

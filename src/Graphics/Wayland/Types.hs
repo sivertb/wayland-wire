@@ -1,3 +1,12 @@
+{-|
+Module      : Graphics.Wayland.Types
+Description : Various types used by the other modules
+Copyright   : (C) Sivert Berg, 2014-2015
+License     : MIT
+Maintainer  : code@trev.is
+Stability   : Experimental
+-}
+
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Graphics.Wayland.Types
     ( ObjId (..)
@@ -25,5 +34,6 @@ instance WordEnum Word32 where
     toWordEnum = id
     fromWordEnum = id
 
+-- | Converts an 'ObjId' to a 'NewId'.
 newFromObj :: ObjId -> NewId
 newFromObj = NewId . unObjId

@@ -13,13 +13,14 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:      Graphics.Wayland.Protocol
+  exposed-modules:      Graphics.Wayland
+                        Graphics.Wayland.Protocol
                         Graphics.Wayland.Types
                         Graphics.Wayland.Dispatch
                         Graphics.Wayland.Wire
-                        Graphics.Wayland.TH
                         Graphics.Wayland.W
-  other-modules:        Graphics.Wayland.Wire.Message
+  other-modules:        Graphics.Wayland.TH
+                        Graphics.Wayland.Wire.Message
                         Graphics.Wayland.Wire.Socket
                         Graphics.Wayland.Wire.Decoder
                         Graphics.Wayland.Wire.Get

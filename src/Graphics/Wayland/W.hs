@@ -1,3 +1,15 @@
+{-|
+Module      : Graphics.Wayland.W
+Description : A transformer monad implementing the 'MonadDispatch' class.
+Copyright   : (C) Sivert Berg, 2014-2015
+License     : MIT
+Maintainer  : code@trev.is
+Stability   : Experimental
+
+A transformer monad that can be used to add support for calling and receiving
+calls to Wayland objects.
+-}
+
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -8,7 +20,7 @@ module Graphics.Wayland.W
     , WS
     , runW
     , recvAndDispatch
-    , AllocLimits
+    , AllocLimits ()
     )
 where
 
@@ -50,6 +62,11 @@ data WState m = WState { regObjs  :: M.Map ObjId (OpCode -> Maybe [Type], Messag
                        , freeObjs :: D.Diet ObjId
                        }
 
+-- | A wayland transformer monad parametrized over:
+--
+-- * @c@ - Where this monad runs. Either 'Server' or 'Client'.
+--
+-- * @m@ - The inner monad.
 newtype W c m a = W { runW' :: ErrorT WError (ReaderT Socket (StateT (WState (W c m)) m)) a }
     deriving ( Applicative
              , Functor
@@ -62,7 +79,6 @@ newtype W c m a = W { runW' :: ErrorT WError (ReaderT Socket (StateT (WState (W 
 
 type WC = W Client
 type WS = W Server
-
 
 -- | Returns the inital state to use when running the 'W' monad.
 initialState :: D.Interval ObjId -> WState m

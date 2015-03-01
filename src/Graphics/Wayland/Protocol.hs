@@ -1,16 +1,14 @@
-{-
+{-|
 Module      : Graphics.Wayland.Protocol
 Description : Haskell representation and XML parser for the Wayland XML
               protocol format.
-Copyright   : (C) Sivert Berg, 2014
+Copyright   : (C) Sivert Berg, 2014-2015
 License     : MIT
 Maintainer  : code@trev.is
 Stability   : Experimental
 
 This module contains Haskell types used to represent a Wayland protocol
-definition. It also contains XML picklers for HXT. Serializing the protocol to
-memory in a format the Wayland library can understand is done in the
-"Graphics.Wayland.Protocol.Serialize" module.
+definition. It also contains XML picklers for HXT.
 -}
 
 {-# LANGUAGE TemplateHaskell #-}

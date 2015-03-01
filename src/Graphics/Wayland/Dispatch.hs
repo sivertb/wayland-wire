@@ -1,3 +1,12 @@
+{-|
+Module      : Graphics.Wayland.Dispatch
+Description : Dispatches incomming and outgoing messages to/from objects
+Copyright   : (C) Sivert Berg, 2014-2015
+License     : MIT
+Maintainer  : code@trev.is
+Stability   : Experimental
+-}
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -9,7 +18,7 @@ module Graphics.Wayland.Dispatch
     , SlotConstructor
     , SignalConstructor
     , Object (..)
-    , Dispatch (..)
+    , Dispatchable (..)
     , MonadDispatch (..)
     , DispatchInterface (..)
     , consName
@@ -33,26 +42,38 @@ import Text.Printf
 data Server
 data Client
 
+-- | An object with phantom types side @c@ ('Server' or 'Client') and interface @i@.
 newtype Object c i = Object { unObject :: ObjId } deriving (Show, Eq, Ord)
 
 type SlotConstructor c i m = (Object c i -> m (Slots c i m)) -> m (Object c i)
 type SignalConstructor c i m = Object c i -> m (Slots c i m)
 
-class Dispatch c i where
+-- | A class defining operations to send and received calls to a 'Object' with
+-- side @c@ and interface @i@.
+class Dispatchable c i where
+    -- | The slots (incomming calls) for this interface.
     data Slots   c i :: (* -> *) -> *
+    -- | The signals (outgoing calls) for this interface.
     data Signals c i :: (* -> *) -> *
+    -- | Dispatches a message to the correct slot.
     dispatch  :: MonadDispatch c m => Slots c i m -> Message -> m ()
+    -- | Returns the signals of an object.
     signals   :: MonadDispatch c m => Object c i -> Signals c i m
+    -- | Returns the argument types for a specified slot.
     slotTypes :: Slots c i m -> OpCode -> Maybe [P.Type]
 
--- | A monad that supports handling objects.
+-- | A monad used to deliever messages to the correct object, as well as
+-- handling allocation and tracking of objects.
 class MonadIO m => MonadDispatch c m | m -> c where
     -- | Allocates a new object, but does not add any handlers to it.
     allocObject :: m NewId
     -- | Frees an allocated object, removing any handlers.
     freeObject :: ObjId -> m ()
-    registerObject :: Dispatch c i => Object c i -> Slots c i m -> m ()
+    -- | Registers handlers for an object's slots.
+    registerObject :: Dispatchable c i => Object c i -> Slots c i m -> m ()
+    -- | Sends a message.
     sendMessage :: Message -> m ()
+    -- | Dispatches a message to the correct object and slot.
     dispatchMessage :: Message -> m ()
 
 -- | Makes it possible to lookup the name and version, as specified in the
@@ -69,16 +90,18 @@ objectFromNewId = Object . ObjId . unNewId
 consInterface :: SignalConstructor c i m -> i
 consInterface _ = undefined
 
+-- | Returns the name of the interface associated with a 'SignalConstructor'.
 consName :: DispatchInterface i => SignalConstructor c i m -> String
 consName = interfaceName . consInterface
 
+-- | Returns the version of the interface associated with a 'SignalConstructor'.
 consVer :: DispatchInterface i => SignalConstructor c i m -> Word32
 consVer = interfaceVersion . consInterface
 
 -- | Creates a new object, using the given constructor.
-newObject :: (Dispatch c i, MonadDispatch c m)
-          => (Object c i -> m (Slots c i m))    -- ^ The object constructor.
-          -> m (NewId, Object c i)              -- ^ The new object and its Id
+newObject :: (Dispatchable c i, MonadDispatch c m)
+          => SignalConstructor c i m -- ^ The object constructor.
+          -> m (NewId, Object c i)   -- ^ The new object and its Id
 newObject f = do
     n <- allocObject
     let o = objectFromNewId n
@@ -86,30 +109,34 @@ newObject f = do
     return (n, o)
 
 -- | Creates a new object if a constructor is given.
-maybeNewObject :: (Dispatch c i, MonadDispatch c m)
-          => Maybe (Object c i -> m (Slots c i m)) -- ^ The object constructor.
+maybeNewObject :: (Dispatchable c i, MonadDispatch c m)
+          => Maybe (SignalConstructor c i m)
           -> m (Maybe NewId, Maybe (Object c i))   -- ^ The new object and its Id
 maybeNewObject Nothing     = return (Nothing, Nothing)
 maybeNewObject (Just cons) = liftM (Just *** Just) (newObject cons)
 
+-- | Registers a new 'Object' using the given constructor.
 regObject :: MonadDispatch c m
-          => Maybe (String, Word32)
-          -> NewId
-          -> forall i . (DispatchInterface i, Dispatch c i)
-          => (Object c i -> m (Slots c i m))    -- ^ The object constructor.
-          -> m (Object c i)                     -- ^ The new object.
-regObject i n f = do
-    let o = objectFromNewId n
-    case i of
+          => Maybe (String, Word32)                         -- ^ An interface name and version the constructor must match,
+                                                            -- or 'Nothing' if this has already been enforced
+                                                            -- by the type system.
+          -> NewId                                          -- ^ The object's ID.
+          -> forall i . (DispatchInterface i, Dispatchable c i)
+          => SignalConstructor c i m                        -- ^ The constructor.
+          -> m (Object c i)                                 -- ^ The new object.
+regObject checkVers newId cons = do
+    let obj = objectFromNewId newId
+    case checkVers of
          Nothing                -> return ()
          Just (expName, expVer) -> do
-             let actName = interfaceName    $ iface o
-                 actVer  = interfaceVersion $ iface o
+             let iface :: Object c i -> i
+                 iface = undefined
+                 actName = interfaceName    $ iface obj
+                 actVer  = interfaceVersion $ iface obj
              unless (actName == expName && actVer >= expVer)
                  . fail
                  $ printf "Interface (%s, %i) does not match expected interface (%s, %i)\n"
                  actName actVer expName expVer
-    f o >>= registerObject o >> return o
-    where
-        iface :: Object c i -> i
-        iface = undefined
+    slots <- cons obj
+    registerObject obj slots
+    return obj
