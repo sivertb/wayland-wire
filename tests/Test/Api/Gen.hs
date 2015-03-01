@@ -1,5 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Test.Api.Gen
+    ( runTest
+    , genTests
+    )
 where
 
 import Control.Applicative
@@ -26,6 +29,7 @@ import Text.Printf
 
 type PIO = PropertyM IO
 
+-- | Run an IO computation in the PropertyM monad, and catch any exceptions.
 runAndCatch :: IO a -> PIO a
 runAndCatch m = do
     res <- run $ tryIOError m
@@ -33,6 +37,7 @@ runAndCatch m = do
          Left  e -> fail $ "Caught IO error: " ++ show e
          Right a -> return a
 
+-- | Creates two connected sockets.
 getSockets :: Maybe String -> IO (Socket, Socket)
 getSockets addr = do
     ls   <- listen addr
@@ -49,6 +54,9 @@ getSockets addr = do
     close ls
     return (sSock, cSock)
 
+-- | Runs a test using two W computations.
+--
+-- The W computations will be given a socket from a pair of connected sockets.
 runTest :: (AllocLimits ma, AllocLimits mb) => W ma IO a -> W mb IO b -> PIO (a, b)
 runTest server client = do
     (ss, cs) <- runAndCatch $ getSockets Nothing
@@ -79,14 +87,22 @@ runTest server client = do
 protocol :: P.Protocol
 protocol = C.testProtocol
 
-prefix :: Bool -> String
-prefix False = "C."
-prefix True  = "S."
+-- | Returns the prefix to use for API names.
+prefix :: Side -> String
+prefix Client = "C."
+prefix Server = "S."
 
+-- | Returns the opposite side.
+otherSide :: Side -> Side
+otherSide Client = Server
+otherSide Server = Client
+
+-- | Checks if this is a new type.
 isNewType :: P.Type -> Bool
 isNewType (P.TypeNew _ _) = True
 isNewType _               = False
 
+-- | Apply a function to all new types.
 zipWithNew :: (Bool -> Maybe String -> a) -> [P.Type] -> [a] -> [a]
 zipWithNew _ []     _  = []
 zipWithNew f (a:as) is =
@@ -95,48 +111,51 @@ zipWithNew f (a:as) is =
          (_            , j:js) -> j     : zipWithNew f as js
          _                     -> error "This should never happen"
 
-objectName :: Bool -> Maybe String -> Name
-objectName server = mkName . (prefix ++) . toCamelU . fromMaybe (P.ifaceName . head $ P.protoInterfaces protocol)
-    where
-        prefix | server    = "S."
-               | otherwise = "C."
+-- | Returns the name of an object with the specified interface, using the
+-- first interface if the interface isn't specified.
+objectName :: Side -> Maybe String -> Name
+objectName side = mkName . (prefix side ++) . toCamelU . fromMaybe (P.ifaceName . head $ P.protoInterfaces protocol)
 
-signalConsType :: Bool -> Bool -> Maybe String -> Type
-signalConsType server n i =
-    wrapMaybe n
-    $ AppT
-    ( AppT
-      ( AppT (ConT ''SignalConstructor) c )
-      ( ConT $ objectName server i) )
-    ( AppT ( AppT (ConT ''W) c ) (ConT ''IO) )
-    where
-        c | server    = ConT ''Server
-          | otherwise = ConT ''Client
+-- | Creates a 'SignalConstructor' type.
+signalConsType :: Side -> Bool -> Maybe String -> Type
+signalConsType side n i =
+    let cons = ConT ''SignalConstructor
+        obj  = ConT (objectName side i)
+        w    = AppT (AppT (ConT ''W) c) (ConT ''IO)
+        c    = ConT $ sideName side
+    in wrapMaybe n $ foldl AppT cons [c, obj, w]
 
-genReceiver :: Bool -> Name -> String -> (String, [P.Type]) -> Q Dec
-genReceiver server r obj (func, args) = do
+-- | Generates the receiving part of the test.
+--
+-- This is a function that will register an 'Object' and add a handler for a
+-- single slot, then wait for a message from the sender.
+genReceiver :: Side -> Name -> String -> (String, [P.Type]) -> Q Dec
+genReceiver side r obj (func, args) = do
     objId      <- newName "o"
     var        <- newName "var"
     input      <- mapM (\_ -> newName "i") $ filter (not . isNewType) args
-    Just cons  <- lookupValueName . (prefix server ++) . toCamelU $ printf "%s_%s" obj "Slots"
-    Just field <- lookupValueName . (prefix server ++) . toCamelL $ printf "%s_%s" obj func
-    funD r [ clause [varP objId] (normalB (body var input cons field objId)) [] ]
-    where
-        body var input cons field objId =
+    Just cons  <- lookupValueName . (prefix side ++) . toCamelU $ printf "%s_%s" obj "Slots"
+    Just field <- lookupValueName . (prefix side ++) . toCamelL $ printf "%s_%s" obj func
+
+    let body =
             [| do
                 $(varP var) <- liftIO $ newEmptyMVar
-                registerObject (Object $(varE objId)) $(recConE cons [ (,) field <$> recvFunc var input ] )
+                registerObject (Object $(varE objId)) $(recConE cons [(,) field <$> recvFunc] )
                 recvAndDispatch
                 liftIO $ readMVar $(varE var)
             |]
-        recvFunc var input =
+        recvFunc =
             lamE
                 (zipWithNew (\_ _  -> wildP) args (map varP input))
                 [| liftIO $ putMVar $(varE var) $(tupE (zipWith mkTupVar input (filter (not . isNewType) args))) |]
+
         mkTupVar i (P.TypeObject True  _) = [| fmap (Object . unObject) $(varE i) |]
         mkTupVar i (P.TypeObject False _) = [| Object . unObject $ $(varE i) |]
         mkTupVar i _                      = varE i
 
+    funD r [ clause [varP objId] (normalB body) [] ]
+
+-- | Apply a function to all fixed arguments.
 zipWithFixed :: (a -> a) -> [P.Type] -> [a] -> [a]
 zipWithFixed _ []     _      = []
 zipWithFixed f (a:as) (i:is) =
@@ -144,28 +163,32 @@ zipWithFixed f (a:as) (i:is) =
          P.TypeFixed -> f i : zipWithFixed f as is
          _           -> i   : zipWithFixed f as is
 
-genSender :: Bool -> Name -> String -> (String, [P.Type]) -> Q Dec
-genSender server s obj (func, args) = do
-    let side = if server
-                 then ''Server
-                 else ''Client
-
+-- | Generates the sender part of the test.
+--
+-- It will generate a function that calls a single slot on an 'Object'.
+genSender :: Side -> Name -> String -> (String, [P.Type]) -> Q Dec
+genSender side s obj (func, args) = do
     objId        <- newName "o"
     input        <- mapM (\_ -> newName "i") $ filter (not . isNewType) args
-    Just objType <- lookupTypeName  . (prefix server ++) $ toCamelU obj
-    Just field   <- lookupValueName . (prefix server ++) . toCamelL $ printf "%s_%s" obj func
-    signal       <- [| signals (Object $(varE objId) :: Object $(conT side) $(conT objType)) |]
+    Just objType <- lookupTypeName  . (prefix side ++) $ toCamelU obj
+    Just field   <- lookupValueName . (prefix side ++) . toCamelL $ printf "%s_%s" obj func
+    signal       <- [| signals (Object $(varE objId) :: Object $(conT $ sideName side) $(conT objType)) |]
 
-    funD s [ clause (map varP (objId:input)) (normalB (return $ body signal field (zipWithNew newArg args (map VarE input)))) [] ]
-    where
-        body signal field as = foldl AppE (VarE field) (signal : zipWithFixed (AppE $ VarE 'fixedToDouble) args as)
-        newArg True  i = newArgSig True i  $ AppE (ConE 'Just) dummyCons
+    let newArg True  i = newArgSig True  i $ AppE (ConE 'Just) dummyCons
         newArg False i = newArgSig False i $ dummyCons
-        newArgSig n i v = SigE v $ signalConsType server n i
+
+        newArgSig n i v = SigE v $ signalConsType side n i
+
         dummyCons = LamE [WildP] $ AppE (VarE 'return) (VarE 'undefined)
 
-genTest :: Bool -> String -> (String, [P.Type]) -> Q (Name, Dec)
-genTest server obj func@(funcName, args) = do
+        bodyArgs = zipWithNew newArg args $ map VarE input
+        body     = foldl AppE (VarE field) (signal : zipWithFixed (AppE $ VarE 'fixedToDouble) args bodyArgs)
+
+    funD s [ clause (map varP (objId:input)) (normalB (return body)) [] ]
+
+-- | Generates a test for a single slot.
+genTest :: Side -> String -> (String, [P.Type]) -> Q (Name, Dec)
+genTest side obj func@(funcName, args) = do
     let testName = mkName $ printf "prop_%s_%s" obj funcName
     o     <- newName "o"
     input <- mapM (\_ -> newName "i") nonNewArgs
@@ -175,8 +198,8 @@ genTest server obj func@(funcName, args) = do
     (,) testName <$>
         funD testName
             [ clause (map varP (o:input)) (body r s o out input)
-              [ genReceiver server r obj func
-              , genSender (not server) s obj func
+              [ genReceiver side r obj func
+              , genSender (otherSide side) s obj func
               ]
             ]
     where
@@ -217,8 +240,8 @@ genTest server obj func@(funcName, args) = do
 genInterfaceTests :: P.Interface -> Q [(Name, Dec)]
 genInterfaceTests iface =
     (++)
-    <$> mapM (genTest True  (P.ifaceName iface)) (getRequests iface)
-    <*> mapM (genTest False (P.ifaceName iface)) (getEvents   iface)
+    <$> mapM (genTest Server (P.ifaceName iface)) (getRequests iface)
+    <*> mapM (genTest Client (P.ifaceName iface)) (getEvents   iface)
 
 -- | Generates test cases for all requests and events in the protocol.
 genTests :: Name -> Q [Dec]

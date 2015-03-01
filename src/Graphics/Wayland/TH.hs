@@ -3,6 +3,7 @@
 
 module Graphics.Wayland.TH
     ( Side (..)
+    , sideName
     , generateFromXml
     , wrapMaybe
     , toCamelL
