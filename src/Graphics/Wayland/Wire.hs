@@ -22,6 +22,7 @@ module Graphics.Wayland.Wire
     , Socket
     , SocketError (..)
     , SocketLookup (..)
+    , MessageLookup
     , listen
     , connect
     , accept
