@@ -2,7 +2,7 @@
 Module      : Graphics.Wayland
 Description : Haskell implementation of the Wayland wire protocol
 Copyright   : (C) Sivert Berg, 2014-2015
-License     : MIT
+License     : GPL3
 Maintainer  : code@trev.is
 Stability   : Experimental
 

@@ -3,7 +3,7 @@ Module      : Graphics.Wayland.Protocol
 Description : Haskell representation and XML parser for the Wayland XML
               protocol format.
 Copyright   : (C) Sivert Berg, 2014-2015
-License     : MIT
+License     : GPL3
 Maintainer  : code@trev.is
 Stability   : Experimental
 

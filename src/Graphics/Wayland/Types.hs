@@ -2,7 +2,7 @@
 Module      : Graphics.Wayland.Types
 Description : Various types used by the other modules
 Copyright   : (C) Sivert Berg, 2014-2015
-License     : MIT
+License     : GPL3
 Maintainer  : code@trev.is
 Stability   : Experimental
 -}

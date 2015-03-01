@@ -2,7 +2,7 @@
 Module      : Graphics.Wayland.Dispatch
 Description : Dispatches incomming and outgoing messages to/from objects
 Copyright   : (C) Sivert Berg, 2014-2015
-License     : MIT
+License     : GPL3
 Maintainer  : code@trev.is
 Stability   : Experimental
 -}
