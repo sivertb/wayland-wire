@@ -15,13 +15,13 @@ import Test.QuickCheck
 prop_encode :: OpCode -> ObjId -> Int32 -> String -> Maybe ObjId -> Fd -> NewId -> [Word32] -> Property
 prop_encode op obj i s mo f n a =
     toMessage op obj i s mo f n a ===
-        (Message op obj [ ArgInt i
-                        , ArgString (Just s)
-                        , ArgObject mo
-                        , ArgFd f
-                        , ArgNew (Just n)
-                        , ArgArray a
-                        ])
+        Message op obj [ ArgInt i
+                       , ArgString (Just s)
+                       , ArgObject mo
+                       , ArgFd f
+                       , ArgNew (Just n)
+                       , ArgArray a
+                       ]
 
 -- | Tests that fromMessage correctly parses a message
 prop_decode :: Int32 -> String -> Maybe ObjId -> Fd -> NewId -> [Word32] -> Property

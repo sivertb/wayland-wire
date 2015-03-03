@@ -19,7 +19,7 @@ runPut' = BSL.toStrict . runPut
 
 -- | Check that running a failing decoder returns the error message.
 prop_failRun :: BS.ByteString -> [Fd] -> String -> Bool
-prop_failRun bs fds msg = Left msg == runDecoder' bs fds ((pullFail msg) :: Decoder ())
+prop_failRun bs fds msg = Left msg == runDecoder' bs fds (pullFail msg :: Decoder ())
 
 -- | Checks that pushing data to a Fail decoder will keep the pushed data.
 prop_failPush :: BS.ByteString -> [Fd] -> String -> Property
@@ -34,7 +34,7 @@ prop_donePushMany :: [(BS.ByteString, [Fd])] -> Property
 prop_donePushMany input = Done bs 0 fds () === foldl (\p (b, f) -> pushData' b f p) (return ()) input
     where
         bs  = BS.concat $ map fst input
-        fds = concat    $ map snd input
+        fds = concatMap snd input
 
 -- | Check that '(>>=)' works correct when combining two 'Done' decoders.
 prop_bindDone :: BS.ByteString -> [Fd] -> BS.ByteString -> [Fd] -> Property

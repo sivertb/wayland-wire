@@ -20,7 +20,7 @@ import Test.QuickCheck.Monadic
 $(genTests 'quickCheckResult)
 
 generatedTests :: IO Bool
-generatedTests = and . map checkResult <$> mapM execTest allTests
+generatedTests = all checkResult <$> mapM execTest allTests
 
 execTest :: (String, IO Result) -> IO Result
 execTest (name, test) = putStrLn ("=== " ++ name ++ " ===") *> test <* putStrLn ""
@@ -40,9 +40,8 @@ prop_newReq w = monadicIO $ do
             mvar <- liftIO newEmptyMVar
             registerObject
                 obj
-                ( S.OneArgumentSlots
+                S.OneArgumentSlots
                 { S.oneArgumentReqNewId = \cons -> cons (\_ -> return undefined) >>= liftIO . putMVar  mvar }
-                )
 
             recvAndDispatch
 
@@ -55,7 +54,7 @@ prop_newReq w = monadicIO $ do
             mvar <- liftIO newEmptyMVar
             new  <- C.oneArgumentReqNewId
                 (signals obj)
-                (\_ -> return $ C.OneArgumentSlots { C.oneArgumentEvtUint = liftIO . putMVar mvar } )
+                (\_ -> return C.OneArgumentSlots { C.oneArgumentEvtUint = liftIO . putMVar mvar } )
 
             recvAndDispatch
             w' <- liftIO $ readMVar mvar
@@ -76,7 +75,7 @@ prop_enum obj e = monadicIO $ do
     where
         server = do
             mvar <- liftIO newEmptyMVar
-            registerObject (Object obj) (S.OneArgumentSlots { S.oneArgumentReqUint = liftIO . putMVar mvar })
+            registerObject (Object obj) S.OneArgumentSlots { S.oneArgumentReqUint = liftIO . putMVar mvar }
             recvAndDispatch
             liftIO $ readMVar mvar
 

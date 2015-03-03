@@ -26,11 +26,11 @@ instance (Eq a) => Eq (Decoder a) where
     (Partial _ ) == (Partial _ ) = True
     _            == _            = False
 
-getLookup :: Interface -> Bool -> (ObjId -> OpCode -> Maybe [Type])
+getLookup :: Interface -> Bool -> ObjId -> OpCode -> Maybe [Type]
 getLookup iface evt =
-    case evt of
-         False -> \_ -> fmap (map argType . reqArgs)   . idx (ifaceRequests iface)
-         True  -> \_ -> fmap (map argType . eventArgs) . idx (ifaceEvents   iface)
+    if evt
+      then \_ -> fmap (map argType . eventArgs) . idx (ifaceEvents   iface)
+      else \_ -> fmap (map argType . reqArgs)   . idx (ifaceRequests iface)
     where
         idx []     _ = Nothing
         idx (a:_ ) 0 = Just a
@@ -64,9 +64,9 @@ genMessageFromInterface iface = do
                 (False, True ) -> return False
                 (True,  False) -> return True
                 (True,  True ) -> arbitrary
-    let maxOps = case evt of
-                      True  -> fromIntegral . length $ ifaceEvents   iface
-                      False -> fromIntegral . length $ ifaceRequests iface
+    let maxOps = if evt
+                   then fromIntegral . length $ ifaceEvents   iface
+                   else fromIntegral . length $ ifaceRequests iface
     op  <- OpCode <$> choose (0, maxOps - 1)
     obj <- arbitrary
     let Just ts = getLookup iface evt 0 op
@@ -82,7 +82,7 @@ hasRequests = not . null . ifaceRequests
 hasEventsOrRequests :: Interface -> Bool
 hasEventsOrRequests iface = hasEvents iface || hasRequests iface
 
-testMsgLookup :: Message -> (ObjId -> OpCode -> Maybe [Type])
+testMsgLookup :: Message -> ObjId -> OpCode -> Maybe [Type]
 testMsgLookup msg _ _ = Just $ map argToType (msgArgs msg)
     where
         argToType arg =
