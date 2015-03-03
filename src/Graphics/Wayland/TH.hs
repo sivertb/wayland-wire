@@ -456,7 +456,7 @@ genEnum iface en =
         , caseD 'pred
         $ zipWith (\pat expr -> match pat (normalB expr) [])
           (map (flip conP [] . snd) vals)
-          ([| error "pred called on first enum value" |] : (map (conE . snd) vals))
+          ([| error "pred called on first enum value" |] : map (conE . snd) vals)
 
         , caseD 'toEnum
         $  map (\(val, name) -> match (intP val) (normalB $ conE name) []) vals

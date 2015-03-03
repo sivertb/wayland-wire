@@ -193,11 +193,11 @@ xpType =
 
         toType (typeName, interface, allowNull) =
             case typeName of
-                 "int"      -> Just $ TypeSigned
-                 "uint"     -> Just $ TypeUnsigned
-                 "fixed"    -> Just $ TypeFixed
-                 "fd"       -> Just $ TypeFd
-                 "array"    -> Just $ TypeArray
+                 "int"      -> Just TypeSigned
+                 "uint"     -> Just TypeUnsigned
+                 "fixed"    -> Just TypeFixed
+                 "fd"       -> Just TypeFd
+                 "array"    -> Just TypeArray
                  "string"   -> Just $ TypeString allowNull
                  "object"   -> Just $ TypeObject allowNull interface
                  "new_id"   -> Just $ TypeNew allowNull interface
