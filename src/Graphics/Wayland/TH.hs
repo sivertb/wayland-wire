@@ -471,8 +471,8 @@ genEnum iface en =
         ]
     <*> instanceD (cxt []) [t| WordEnum $(conT datName) |]
         [ caseD 'toWordEnum
-        $  map (\(val, name) -> match (intP val) (normalB $ conE name) []) vals
-        ++ [ match wildP (normalB [| error "toWordEnum - value is out of range" |]) [] ]
+        $  map (\(val, name) -> match (intP val) (normalB [| Just $(conE name) |]) []) vals
+        ++ [ match wildP (normalB [| Nothing |]) [] ]
 
         , caseD 'fromWordEnum
         $ map (\(val, name) -> match (conP name []) (normalB $ intE val) []) vals
@@ -482,7 +482,7 @@ genEnum iface en =
         caseD n ms = funD n [clause [varP i] (normalB (caseE (varE i) ms)) []]
         vals       = sort . map (entryValue &&& valName) $ enumValues en
         prefix     = ifaceName iface ++ "_" ++ enumName en
-        datName    = mkNameU $ prefix
+        datName    = mkNameU prefix
         valName    = mkNameU . (prefix ++) . ("_" ++) . entryName
 
 -- | Generates code for all enums in an interface.

@@ -27,11 +27,11 @@ newtype OpCode = OpCode { unOpCode :: Word16 }
     deriving (Show, Eq, Ord, Enum, Num)
 
 class WordEnum w where
-    toWordEnum :: Word32 -> w
+    toWordEnum :: Word32 -> Maybe w
     fromWordEnum :: w -> Word32
 
 instance WordEnum Word32 where
-    toWordEnum = id
+    toWordEnum = Just
     fromWordEnum = id
 
 -- | Converts an 'ObjId' to a 'NewId'.
