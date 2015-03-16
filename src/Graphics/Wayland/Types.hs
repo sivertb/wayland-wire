@@ -12,11 +12,12 @@ module Graphics.Wayland.Types
     ( ObjId (..)
     , NewId (..)
     , OpCode (..)
-    , WordEnum (..)
+    , WireEnum (..)
     , newFromObj
     )
 where
 
+import Data.Int
 import Data.Word
 
 newtype ObjId = ObjId { unObjId :: Word32 }
@@ -26,13 +27,26 @@ newtype NewId = NewId { unNewId :: Word32 }
 newtype OpCode = OpCode { unOpCode :: Word16 }
     deriving (Show, Eq, Ord, Enum, Num)
 
-class WordEnum w where
-    toWordEnum :: Word32 -> Maybe w
-    fromWordEnum :: w -> Word32
+class WireEnum w where
+    fromWord32 :: Word32 -> Maybe w
+    fromWord32 = fromInt32 . fromIntegral
 
-instance WordEnum Word32 where
-    toWordEnum = Just
-    fromWordEnum = id
+    toWord32 :: w -> Word32
+    toWord32 = fromIntegral . toInt32
+
+    fromInt32 :: Int32 -> Maybe w
+    fromInt32 = fromWord32 . fromIntegral
+
+    toInt32 :: w -> Int32
+    toInt32 = fromIntegral . toWord32
+
+instance WireEnum Word32 where
+    fromWord32 = Just
+    toWord32 = id
+
+instance WireEnum Int32 where
+    fromInt32 = Just
+    toInt32 = id
 
 -- | Converts an 'ObjId' to a 'NewId'.
 newFromObj :: ObjId -> NewId

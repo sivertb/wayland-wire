@@ -170,17 +170,17 @@ genNewType rt s nullable iface = do
              <$> (wrapMaybe nullable <$> [t| SignalConstructor $c $i $m |])
              <*> ((: []) . wrapMaybe nullable <$> obj)
 
--- | Generates the type of TypeUnsigned arguments.
+-- | Generates the type of TypeUnsigned and TypeSigned arguments.
 --
--- On Slots it's simply 'Word32', but on signals we'll allow arbitrary 'WordEnum'
--- values.
-genWordType :: RecordType -> Q (Type, [(Name, [PredQ])], [Type])
-genWordType rt =
+-- On Slots it's simply 'Word32' or 'Int32', but on signals we'll allow
+-- arbitrary 'WireEnum' values.
+genIntegerType :: RecordType -> Name -> Q (Type, [(Name, [PredQ])], [Type])
+genIntegerType rt con =
     case rt of
-         Slots   -> (, [], []) <$> [t| Word32 |]
+         Slots   -> (, [], []) <$> conT con
          Signals -> do
              e <- newName "e"
-             return (VarT e, [(e, [classP ''WordEnum [varT e]])], [])
+             return (VarT e, [(e, [classP ''WireEnum [varT e]])], [])
 
 -- | Generates the type of a single function argument, returning both the type,
 -- any type variables it contains that needs too be caught, predicates that
@@ -189,13 +189,13 @@ genWordType rt =
 genArgType :: RecordType -> Side -> P.Type -> Q (Type, [(Name, [PredQ])], [Type])
 genArgType rt s t =
     case t of
-         TypeSigned     -> (, [], [])               <$> [t| Int32     |]
          TypeFixed      -> (, [], [])               <$> [t| Double    |]
          TypeFd         -> (, [], [])               <$> [t| Fd        |]
          TypeArray      -> (, [], [])               <$> [t| [Word32]  |]
          TypeString n   -> (, [], []) . wrapMaybe n <$> [t| String    |]
          TypeObject n i -> return . (, [], []) $ genObjectType s n i
-         TypeUnsigned   -> genWordType rt
+         TypeSigned     -> genIntegerType rt ''Int32
+         TypeUnsigned   -> genIntegerType rt ''Word32
          TypeNew    n i -> genNewType rt s n i
 
 -- | Creates a tuple with the given list of element types.
@@ -379,9 +379,13 @@ genSignalArg t =
                                       else [| unObject $(varE obj) |]
              return (id, obj, [arg], [])
 
+         TypeSigned -> do
+             e <- newName "e"
+             (id, e,, []) . (:[]) <$> [| toInt32 $(varE e) |]
+
          TypeUnsigned -> do
              e <- newName "e"
-             (id, e,, []) . (:[]) <$> [| fromWordEnum $(varE e) |]
+             (id, e,, []) . (:[]) <$> [| toWord32 $(varE e) |]
 
          _ -> (\n -> (id, n, [VarE n], [])) <$> newName "arg"
 
@@ -469,12 +473,12 @@ genEnum iface en =
         [ funD 'minBound [clause [] (normalB (conE . snd $ head vals)) []]
         , funD 'maxBound [clause [] (normalB (conE . snd $ last vals)) []]
         ]
-    <*> instanceD (cxt []) [t| WordEnum $(conT datName) |]
-        [ caseD 'toWordEnum
+    <*> instanceD (cxt []) [t| WireEnum $(conT datName) |]
+        [ caseD 'fromWord32
         $  map (\(val, name) -> match (intP val) (normalB [| Just $(conE name) |]) []) vals
         ++ [ match wildP (normalB [| Nothing |]) [] ]
 
-        , caseD 'fromWordEnum
+        , caseD 'toWord32
         $ map (\(val, name) -> match (conP name []) (normalB $ intE val) []) vals
         ]
     where
