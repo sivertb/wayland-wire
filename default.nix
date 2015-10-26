@@ -1,15 +1,23 @@
-{ cabal, cabalInstall_1_20_0_6, filterSource, hxt, networkMsg, utf8String, QuickCheck, mtl, free, dietSet, thLift }:
-
-cabal.mkDerivation
-( self:
-  { pname = "wayland-wire"
-  ; version = "0.1.0"
-  ; src = filterSource ./.
-  ; buildTools = [ cabalInstall_1_20_0_6 ]
-  ; buildDepends = [ hxt networkMsg utf8String mtl free dietSet thLift ]
-  ; testDepends = [ QuickCheck ]
-  ; doCheck = true
-  ; enableSplitObjs = false
-  ;
-  }
-)
+{ mkDerivation, base, binary, bytestring, containers, diet-set
+, directory, free, hxt, mtl, network, network-msg, QuickCheck
+, stdenv, template-haskell, th-lift, transformers, unix
+, utf8-string, cabal-install
+}:
+mkDerivation {
+  pname = "wayland-wire";
+  version = "0.1.0";
+  src = ./.;
+  buildTools = [ cabal-install ];
+  buildDepends = [
+    base binary bytestring containers diet-set directory free hxt mtl
+    network network-msg template-haskell th-lift transformers unix
+    utf8-string
+  ];
+  testDepends = [
+    base binary bytestring containers diet-set directory free hxt mtl
+    network network-msg QuickCheck template-haskell th-lift
+    transformers unix utf8-string
+  ];
+  description = "Haskell implementation of the Wayland wire protocol";
+  license = "GPL";
+}
