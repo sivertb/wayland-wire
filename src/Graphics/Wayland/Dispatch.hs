@@ -18,6 +18,8 @@ module Graphics.Wayland.Dispatch
     , SlotConstructor
     , SignalConstructor
     , Object (..)
+    , SObject
+    , CObject
     , Dispatchable (..)
     , MonadDispatch (..)
     , DispatchInterface (..)
@@ -44,6 +46,9 @@ data Client
 
 -- | An object with phantom types side @c@ ('Server' or 'Client') and interface @i@.
 newtype Object c i = Object { unObject :: ObjId } deriving (Show, Eq, Ord)
+
+type SObject = Object Server
+type CObject = Object Client
 
 type SlotConstructor c i m = (Object c i -> m (Slots c i m)) -> m (Object c i)
 type SignalConstructor c i m = Object c i -> m (Slots c i m)
