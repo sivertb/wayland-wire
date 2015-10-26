@@ -12,6 +12,7 @@ definition. It also contains XML picklers for HXT.
 -}
 
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 
 module Graphics.Wayland.Protocol
     ( Protocol (..)
@@ -268,8 +269,10 @@ xpSummary = xpOption $ xpAttr "summary" xpText
 xpSince :: PU (Maybe Int)
 xpSince = xpOption $ xpAttr "since" xpPrim
 
+#if !MIN_VERSION_template_haskell(2,10,0)
 instance Lift Word32 where
     lift = litE . integerL . toInteger
+#endif
 
 $( deriveLiftMany
    $ map mkName
