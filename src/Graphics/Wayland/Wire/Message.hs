@@ -23,6 +23,7 @@ import Graphics.Wayland.Wire.Get
 import Graphics.Wayland.Wire.Put
 import qualified Graphics.Wayland.Protocol as P
 import Graphics.Wayland.Types
+import Prelude
 import System.Posix
 import Text.Printf
 

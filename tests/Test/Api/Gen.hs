@@ -20,6 +20,7 @@ import Graphics.Wayland.Wire.Message
 import System.IO.Error
 import qualified Test.Api.Client as C
 import Language.Haskell.TH
+import Prelude
 import System.Posix
 import Test.Arbitrary ()
 import Test.Fd

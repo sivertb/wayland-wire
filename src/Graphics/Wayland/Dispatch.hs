@@ -34,8 +34,8 @@ where
 
 import Control.Arrow
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.Word
-import Control.Monad.Error
 import Graphics.Wayland.Types
 import Graphics.Wayland.Wire.Message
 import qualified Graphics.Wayland.Protocol as P

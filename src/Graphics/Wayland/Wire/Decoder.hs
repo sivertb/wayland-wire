@@ -38,6 +38,7 @@ import Control.Monad
 import Data.Binary.Get hiding (Decoder, Partial, Done, Fail)
 import qualified Data.Binary.Get as G
 import qualified Data.ByteString as BS
+import Prelude
 import System.Posix
 import Text.Printf
 

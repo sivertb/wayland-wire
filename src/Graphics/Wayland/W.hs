@@ -26,7 +26,7 @@ where
 
 import Control.Applicative
 import Control.Monad.IO.Class
-import Control.Monad.Error
+import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import qualified Data.Set.Diet as D
@@ -35,6 +35,7 @@ import Graphics.Wayland.Dispatch
 import Graphics.Wayland.Protocol
 import Graphics.Wayland.Types
 import Graphics.Wayland.Wire
+import Prelude
 
 -- | A class used for finding the minimum and maximum allowed object ID.
 class AllocLimits c where
@@ -53,10 +54,6 @@ data WError =
   | WErrUser  String
   deriving (Eq, Show)
 
-instance Error WError where
-    noMsg  = WErrUser ""
-    strMsg = WErrUser
-
 -- | Holds the 'W' monad's state.
 data WState m = WState { regObjs  :: M.Map ObjId (OpCode -> Maybe [Type], Message -> m ())
                        , freeObjs :: D.Diet ObjId
@@ -67,7 +64,7 @@ data WState m = WState { regObjs  :: M.Map ObjId (OpCode -> Maybe [Type], Messag
 -- * @c@ - Where this monad runs. Either 'Server' or 'Client'.
 --
 -- * @m@ - The inner monad.
-newtype W c m a = W { runW' :: ErrorT WError (ReaderT Socket (StateT (WState (W c m)) m)) a }
+newtype W c m a = W { runW' :: ExceptT WError (ReaderT Socket (StateT (WState (W c m)) m)) a }
     deriving ( Applicative
              , Functor
              , Monad
@@ -101,7 +98,7 @@ wmLimits = m >> return (wLimits m)
 
 -- | Runs a 'W' computation.
 runW :: (AllocLimits c, Monad m) => Socket -> W c m a -> m (Either WError a)
-runW s w = evalStateT (runReaderT (runErrorT (runW' w)) s) $ initialState (wLimits w)
+runW s w = evalStateT (runReaderT (runExceptT (runW' w)) s) $ initialState (wLimits w)
 
 -- | Receives and dispatches a message from the 'W' monad's socket.
 recvAndDispatch :: (AllocLimits c, Functor m, MonadIO m) => W c m ()
@@ -111,19 +108,19 @@ instance (AllocLimits c, Functor m, MonadIO m) => MonadDispatch c (W c m) where
     allocObject = do
         mv <- gets (D.minView . freeObjs)
         case mv of
-             Nothing           -> throwError $ strMsg "No more free IDs!"
+             Nothing           -> throwError $ WErrUser "No more free IDs!"
              Just (a, newObjs) -> newFromObj a <$ modify (\s -> s { freeObjs = newObjs })
 
     freeObject objId = do
         validId     <- D.overlapping (D.point objId) <$> wmLimits
         alreadyFree <- D.member objId <$> gets freeObjs
-        unless validId     . throwError $ strMsg "Trying to free an ID outside the valid ID range"
-        when   alreadyFree . throwError $ strMsg "Trying to free an ID that's already free"
+        unless validId     . throwError $ WErrUser "Trying to free an ID outside the valid ID range"
+        when   alreadyFree . throwError $ WErrUser "Trying to free an ID that's already free"
         modify (\s -> s { freeObjs = D.insert objId (freeObjs s) } )
 
     registerObject obj slots = do
         exists <- gets (M.member (unObject obj) . regObjs)
-        when exists . throwError . strMsg $ "Trying to register " ++ show obj ++ " which already exists"
+        when exists . throwError . WErrUser $ "Trying to register " ++ show obj ++ " which already exists"
         modify (\s -> s { regObjs = M.insert (unObject obj) (slotTypes slots, dispatch slots) (regObjs s) })
 
     sendMessage msg = do

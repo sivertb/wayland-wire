@@ -7,6 +7,7 @@ where
 import Control.Monad
 import Data.Monoid
 import qualified Data.ByteString as BS
+import Prelude
 import System.Posix
 
 -----------------------------------------------------------------------------

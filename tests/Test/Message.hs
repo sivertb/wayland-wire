@@ -17,6 +17,7 @@ import Graphics.Wayland.Wire.Raw
 import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Protocol
 import Graphics.Wayland.Types
+import Prelude
 import Test.Arbitrary ()
 import Test.QuickCheck
 

@@ -28,6 +28,7 @@ import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Wire.Raw
 import qualified Network.Socket as S
 import Network.Socket.Msg
+import Prelude
 import System.Posix
 import System.IO.Error
 import System.IO.Unsafe

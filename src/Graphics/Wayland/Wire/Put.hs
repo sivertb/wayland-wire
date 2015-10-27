@@ -18,6 +18,7 @@ import qualified Data.ByteString as BS
 import Data.Word
 import Foreign
 import Graphics.Wayland.Wire.Raw
+import Prelude
 import System.IO.Unsafe
 import System.Posix
 

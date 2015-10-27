@@ -9,6 +9,7 @@ import Graphics.Wayland.Types
 import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Wire.Raw
 import Graphics.Wayland.Protocol
+import Prelude
 import System.Posix
 import Test.QuickCheck hiding (Fixed)
 

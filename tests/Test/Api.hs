@@ -11,6 +11,7 @@ import Data.Word
 import Graphics.Wayland.Dispatch
 import Graphics.Wayland.Types
 import Graphics.Wayland.W
+import Prelude
 import Test.Arbitrary ()
 import Test.Api.Gen
 import qualified Test.Api.Client as C

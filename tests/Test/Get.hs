@@ -10,6 +10,7 @@ import qualified Data.ByteString as BS
 import Foreign
 import Graphics.Wayland.Wire.Get
 import Graphics.Wayland.Wire.Raw
+import Prelude
 import System.Posix
 import Test.Arbitrary ()
 import Test.QuickCheck

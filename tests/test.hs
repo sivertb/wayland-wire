@@ -1,5 +1,6 @@
 import Control.Applicative
 import Control.Monad
+import Prelude
 import System.Exit
 import Test.Api
 import Test.Encode

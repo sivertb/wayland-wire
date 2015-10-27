@@ -29,9 +29,16 @@ where
 
 import Data.Word
 import Text.XML.HXT.Core hiding (mkName)
-import Language.Haskell.TH.Lib (litE, integerL)
-import Language.Haskell.TH.Lift (deriveLiftMany, Lift (..))
 import Language.Haskell.TH.Syntax (mkName)
+import Language.Haskell.TH.Lift (deriveLiftMany)
+
+#if !MIN_VERSION_template_haskell(2,10,0)
+import Language.Haskell.TH.Lib (litE, integerL)
+import Language.Haskell.TH.Lift (Lift (..))
+
+instance Lift Word32 where
+    lift = litE . integerL . toInteger
+#endif
 
 data Protocol =
     Protocol { protoName       :: String
@@ -269,10 +276,6 @@ xpSummary = xpOption $ xpAttr "summary" xpText
 xpSince :: PU (Maybe Int)
 xpSince = xpOption $ xpAttr "since" xpPrim
 
-#if !MIN_VERSION_template_haskell(2,10,0)
-instance Lift Word32 where
-    lift = litE . integerL . toInteger
-#endif
 
 $( deriveLiftMany
    $ map mkName

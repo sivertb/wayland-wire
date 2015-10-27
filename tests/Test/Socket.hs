@@ -11,6 +11,7 @@ import Data.Maybe
 import Data.List
 import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Wire.Socket
+import Prelude
 import System.Posix
 import Test.Fd
 import Test.Message

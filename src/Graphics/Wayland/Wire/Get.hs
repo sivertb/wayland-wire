@@ -39,13 +39,14 @@ import Control.Applicative
 import Control.Monad.State
 import Control.Monad.Trans.Free
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Internal as BS
 import qualified Data.ByteString.Unsafe as BS
 import Data.Monoid
 import Data.Word
 import Foreign.Ptr
 import Foreign.Storable
 import Graphics.Wayland.Wire.Raw
+import Prelude
+import System.IO.Unsafe
 import System.Posix
 import Text.Printf
 
@@ -150,7 +151,7 @@ getBytes n = (\(Raw bs _) -> bs) <$> getData n 0
 getPtr :: Storable a => Int -> Get a
 getPtr n = do
     bs <- getBytes n
-    return (BS.inlinePerformIO $ BS.unsafeUseAsCString bs (peek . castPtr))
+    return (unsafeDupablePerformIO $ BS.unsafeUseAsCString bs (peek . castPtr))
 
 -- | Parses a 32bit word in host order.
 getWord32 :: Get Word32

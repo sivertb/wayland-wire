@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE CPP #-}
 
 module Graphics.Wayland.TH
     ( Side (..)
@@ -28,6 +29,7 @@ import Graphics.Wayland.Wire
 import qualified Graphics.Wayland.Protocol as P
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (addDependentFile)
+import Prelude
 import System.Posix (Fd)
 import System.Directory (canonicalizePath)
 import Text.XML.HXT.Core hiding (mkName)
@@ -125,10 +127,17 @@ genObjectType s nullable =
     where
         obj = AppT (ConT ''Object) (ConT $ sideName s)
 
+clsP :: Name -> [TypeQ] -> PredQ
+#if MIN_VERSION_template_haskell(2,10,0)
+clsP n = fmap (foldl AppT $ ConT n) . sequence
+#else
+clsP = classP
+#endif
+
 -- | Returns a class predicate for 'DispatchInterface' for the given name.
 classCxt :: Side -> Name -> [PredQ]
-classCxt s i = [ classP ''DispatchInterface [varT i]
-               , classP ''Dispatchable [conT (sideName s), varT i]
+classCxt s i = [ clsP ''DispatchInterface [varT i]
+               , clsP ''Dispatchable [conT (sideName s), varT i]
                ]
 
 -- | Generates the type of a new object.
@@ -180,7 +189,7 @@ genIntegerType rt con =
          Slots   -> (, [], []) <$> conT con
          Signals -> do
              e <- newName "e"
-             return (VarT e, [(e, [classP ''WireEnum [varT e]])], [])
+             return (VarT e, [(e, [clsP ''WireEnum [varT e]])], [])
 
 -- | Generates the type of a single function argument, returning both the type,
 -- any type variables it contains that needs too be caught, predicates that
