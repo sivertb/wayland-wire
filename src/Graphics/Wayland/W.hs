@@ -74,6 +74,9 @@ newtype W c m a = W { runW' :: ExceptT WError (ReaderT Socket (StateT (WState (W
              , MonadState (WState (W c m))
              )
 
+instance AllocLimits c => MonadTrans (W c) where
+    lift = W . lift . lift . lift
+
 type WC = W Client
 type WS = W Server
 
