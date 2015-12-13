@@ -112,9 +112,5 @@ instance ArgType [Word32] where
 toMessage :: Encodable a => OpCode -> ObjId -> a
 toMessage op obj = encode op obj []
 
-fromMessage :: (Monad m, Decodable a b m) => Message -> a -> m b
-fromMessage msg m = do
-    res <- decode (msgArgs msg) Nothing m
-    case res of
-         Left  e -> fail e
-         Right x -> return x
+fromMessage :: (Monad m, Decodable a b m) => Message -> a -> m (Either String b)
+fromMessage msg = decode (msgArgs msg) Nothing

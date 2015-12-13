@@ -49,9 +49,14 @@ instance AllocLimits Client where
 
 -- | The error type of the 'W' monad.
 data WError =
-    WErrIO    IOError
-  | WErrProto String
-  | WErrUser  String
+    -- | A wrapped IO error.
+    WErrIO     IOError
+    -- | A message sent to the given object was invalid.
+  | WErrMethod ObjId String
+    -- | A message was sent to a non-existing object.
+  | WErrObject ObjId
+    -- | Any other error.
+  | WErrUser   String
   deriving (Eq, Show)
 
 -- | Holds the 'W' monad's state.
@@ -133,8 +138,10 @@ instance (AllocLimits c, Functor m, MonadIO m) => MonadDispatch c (W c m) where
     dispatchMessage msg = do
         handler <- gets (fmap snd . M.lookup (msgObj msg) . regObjs)
         case handler of
-             Nothing -> throwError . WErrProto $ "Could not find a dispatcher for object " ++ show (msgObj msg)
+             Nothing -> throwError . WErrObject $ msgObj msg
              Just h  -> h msg
+
+    protocolError obj err = throwError $ WErrMethod obj err
 
 instance (Functor m, MonadIO m) => SocketError (W c m) where
     sockErr = throwError . WErrIO

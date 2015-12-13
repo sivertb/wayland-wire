@@ -61,6 +61,9 @@ class Dispatchable c i where
     -- | The signals (outgoing calls) for this interface.
     data Signals c i :: (* -> *) -> *
     -- | Dispatches a message to the correct slot.
+    --
+    -- If the slot does not exist it will signal an error using
+    -- 'protocolError'.
     dispatch  :: MonadDispatch c m => Slots c i m -> Message -> m ()
     -- | Returns the signals of an object.
     signals   :: MonadDispatch c m => Object c i -> Signals c i m
@@ -79,7 +82,12 @@ class MonadIO m => MonadDispatch c m | m -> c where
     -- | Sends a message.
     sendMessage :: Message -> m ()
     -- | Dispatches a message to the correct object and slot.
+    --
+    -- If the object or slot does not exist it will signal an error using
+    -- 'protocolError'.
     dispatchMessage :: Message -> m ()
+    -- | Signals that a protocol error has occured.
+    protocolError :: ObjId -> String -> m ()
 
 -- | Makes it possible to lookup the name and version, as specified in the
 -- protocol, of an interface.
@@ -139,7 +147,7 @@ regObject checkVers newId cons = do
                  actName = interfaceName    $ iface obj
                  actVer  = interfaceVersion $ iface obj
              unless (actName == expName && actVer >= expVer)
-                 . fail
+                 . protocolError (unObject obj)
                  $ printf "Interface (%s, %i) does not match expected interface (%s, %i)\n"
                  actName actVer expName expVer
     slots <- cons obj

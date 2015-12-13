@@ -321,23 +321,29 @@ genDispatchCase iface (op, (n, ts)) = do
 
     let func  = lamE (map varP pats) (return $ foldl AppE field args)
         field = AppE (VarE $ fieldName iface n) (VarE $ mkName "slots")
+        msg   = varE $ mkName "msg"
 
     match
         (intP op)
-        (normalB [| fromMessage $(varE $ mkName "msg") $(func) |])
+        (normalB [| either (protocolError $ msgObj $(msg)) return =<< fromMessage $(msg) $(func) |])
         []
 
 -- | Generates the expression for the 'dispatch' function of a 'Dispatchable' instance.
 --
 -- The expression will be a lambda function
--- '\slots msg -> case msgOp msg of { 0 -> case0; 1 -> case1; _ -> fail "unknown opcode" }
+-- '\slots msg -> case msgOp msg of { 0 -> case0; 1 -> case1; _ -> protocolError (msgObj msg) "unknown opcode" }
 -- with one case for every possible opcode.
 genDispatch :: Side -> Interface -> Q Exp
 genDispatch s iface =
     lamE [slotsP, varP $ mkName "msg"] $
         caseE [| msgOp $(varE $ mkName "msg") |]
         ( map (genDispatchCase iface) (zip [0..] slots) ++
-        [ match (varP op) (normalB [| fail ("Unknown opcode " ++ show $(varE op)) |]) [] ]
+        [ match (varP op)
+        ( normalB [| protocolError
+                        (msgObj $(varE $ mkName "msg"))
+                        ("Unknown opcode " ++ show $(varE op))
+                  |]) []
+        ]
         )
     where
         op = mkName "op"
