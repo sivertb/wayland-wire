@@ -75,10 +75,12 @@ class Dispatchable c i where
 class MonadIO m => MonadDispatch c m | m -> c where
     -- | Allocates a new object, but does not add any handlers to it.
     allocObject :: m NewId
-    -- | Frees an allocated object, removing any handlers.
-    freeObject :: ObjId -> m ()
+    -- | Frees an allocated object.
+    freeObject :: Object c i -> m ()
     -- | Registers handlers for an object's slots.
     registerObject :: Dispatchable c i => Object c i -> Slots c i m -> m ()
+    -- | Unregisters the handlers of an object.
+    unregisterObject :: Dispatchable c i => Object c i -> m ()
     -- | Sends a message.
     sendMessage :: Message -> m ()
     -- | Dispatches a message to the correct object and slot.

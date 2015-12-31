@@ -119,7 +119,7 @@ instance (AllocLimits c, Functor m, MonadIO m) => MonadDispatch c (W c m) where
              Nothing           -> throwError $ WErrUser "No more free IDs!"
              Just (a, newObjs) -> newFromObj a <$ modify (\s -> s { freeObjs = newObjs })
 
-    freeObject objId = do
+    freeObject (Object objId) = do
         validId     <- D.overlapping (D.point objId) <$> wmLimits
         alreadyFree <- D.member objId <$> gets freeObjs
         unless validId     . throwError $ WErrUser "Trying to free an ID outside the valid ID range"
@@ -130,6 +130,11 @@ instance (AllocLimits c, Functor m, MonadIO m) => MonadDispatch c (W c m) where
         exists <- gets (M.member (unObject obj) . regObjs)
         when exists . throwError . WErrUser $ "Trying to register " ++ show obj ++ " which already exists"
         modify (\s -> s { regObjs = M.insert (unObject obj) (slotTypes slots, dispatch slots) (regObjs s) })
+
+    unregisterObject obj = do
+        exists <- gets (M.member (unObject obj) . regObjs)
+        unless exists . throwError . WErrUser $ "Trying to unregister " ++ show obj ++ " that does not exist"
+        modify (\s -> s { regObjs = M.delete (unObject obj) (regObjs s) })
 
     sendMessage msg = do
         sock <- ask
