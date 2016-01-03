@@ -20,8 +20,6 @@ module Graphics.Wayland.Wire
     , doubleToFixed
     -- * Socket
     , Socket
-    , SocketError (..)
-    , SocketLookup (..)
     , MessageLookup
     , listen
     , connect

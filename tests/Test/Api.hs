@@ -1,12 +1,14 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE TemplateHaskell #-}
+
 module Test.Api
     ( apiTests )
 where
 
 import Control.Applicative
-import Control.Concurrent
-import Control.Monad.IO.Class
+import Control.Monad
+import Control.Monad.Trans
 import Data.Word
 import Graphics.Wayland.Dispatch
 import Graphics.Wayland.Types
@@ -17,7 +19,6 @@ import Test.Api.Gen
 import qualified Test.Api.Client as C
 import qualified Test.Api.Server as S
 import Test.QuickCheck
-import Test.QuickCheck.Monadic
 
 $(genTests 'quickCheckResult)
 
@@ -33,35 +34,28 @@ checkResult _            = False
 
 -- | Checks that a new object is created when calling a request taking a new_id.
 prop_newReq :: Word32 -> Property
-prop_newReq w = monadicIO $ do
-    (s, (c, w')) <- runTest server client
-    stop $ s === c .&&. w === w'
+prop_newReq w =
+    let (mgrA, mgrB, _, new, [], []) = runTest newObjectManager newObjectManager server1 client1
+        (_   , _   , _, _  , resServer, resClient) = runTest mgrB mgrA server2 (client2 new)
+    in resServer === [w] .&&. resClient === []
     where
-        server = do
+        server1 msg = do
             let obj = Object 1
-            mvar <- liftIO newEmptyMVar
             registerObject
                 obj
                 S.OneArgumentSlots
-                { S.oneArgumentReqNewId = \cons -> cons (\_ -> return undefined) >>= liftIO . putMVar  mvar }
+                { S.oneArgumentReqNewId = \cons -> cons (\_ -> return undefined) >> return () }
 
-            recvAndDispatch
+            dispatchMessage msg
 
-            new <- liftIO $ readMVar mvar
-            S.oneArgumentEvtUint (signals new) w
-            return (unObject new)
-
-        client = do
+        client1 = do
             obj  <- objectFromNewId <$> allocObject
-            mvar <- liftIO newEmptyMVar
-            new  <- C.oneArgumentReqNewId
+            C.oneArgumentReqNewId
                 (signals obj)
-                (\_ -> return C.OneArgumentSlots { C.oneArgumentEvtUint = liftIO . putMVar mvar } )
+                (\_ -> return C.OneArgumentSlots { C.oneArgumentEvtUint = lift . testResult } )
 
-            recvAndDispatch
-            w' <- liftIO $ readMVar mvar
-
-            return (unObject new, w')
+        server2 msg = dispatchMessage msg
+        client2 new = S.oneArgumentEvtUint (signals (Object (unObject new))) w
 
 instance Arbitrary C.OneArgumentEnum where
     arbitrary = elements [ C.OneArgumentEnumZero
@@ -71,15 +65,13 @@ instance Arbitrary C.OneArgumentEnum where
 
 -- | Checks that it's possible to pass an Enum to a signal.
 prop_enum :: ObjId -> C.OneArgumentEnum -> Property
-prop_enum obj e = monadicIO $ do
-    (s, _) <- runTest server client
-    stop $ s === fromIntegral (fromEnum e)
+prop_enum obj e =
+    let (_, _, _, _, resServer, resClient) = runTest newObjectManager newObjectManager server client
+    in resServer === [toWord32 e] .&&. resClient === []
     where
-        server = do
-            mvar <- liftIO newEmptyMVar
-            registerObject (Object obj) S.OneArgumentSlots { S.oneArgumentReqUint = liftIO . putMVar mvar }
-            recvAndDispatch
-            liftIO $ readMVar mvar
+        server msg = do
+            registerObject (Object obj) S.OneArgumentSlots { S.oneArgumentReqUint = lift . testResult }
+            dispatchMessage msg
 
         client = C.oneArgumentReqUint (signals $ Object obj) e
 

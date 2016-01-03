@@ -7,10 +7,12 @@ Maintainer  : code@trev.is
 Stability   : Experimental
 -}
 
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 module Graphics.Wayland.Dispatch
     ( Server
@@ -21,8 +23,10 @@ module Graphics.Wayland.Dispatch
     , SObject
     , CObject
     , Dispatchable (..)
-    , MonadDispatch (..)
     , DispatchInterface (..)
+    , MonadObject (..)
+    , MonadSend (..)
+
     , consName
     , consVer
     , objectFromNewId
@@ -34,7 +38,6 @@ where
 
 import Control.Arrow
 import Control.Monad
-import Control.Monad.IO.Class
 import Data.Word
 import Graphics.Wayland.Types
 import Graphics.Wayland.Wire.Message
@@ -64,15 +67,15 @@ class Dispatchable c i where
     --
     -- If the slot does not exist it will signal an error using
     -- 'protocolError'.
-    dispatch  :: MonadDispatch c m => Slots c i m -> Message -> m ()
+    dispatch  :: (MonadSend m, MonadObject c m) => Slots c i m -> Message -> m ()
     -- | Returns the signals of an object.
-    signals   :: MonadDispatch c m => Object c i -> Signals c i m
+    signals   :: (MonadSend m, MonadObject c m) => Object c i -> Signals c i m
     -- | Returns the argument types for a specified slot.
     slotTypes :: Slots c i m -> OpCode -> Maybe [P.Type]
 
 -- | A monad used to deliever messages to the correct object, as well as
 -- handling allocation and tracking of objects.
-class MonadIO m => MonadDispatch c m | m -> c where
+class Monad m => MonadObject c m | m -> c where
     -- | Allocates a new object, but does not add any handlers to it.
     allocObject :: m NewId
     -- | Frees an allocated object.
@@ -81,8 +84,6 @@ class MonadIO m => MonadDispatch c m | m -> c where
     registerObject :: Dispatchable c i => Object c i -> Slots c i m -> m ()
     -- | Unregisters the handlers of an object.
     unregisterObject :: Dispatchable c i => Object c i -> m ()
-    -- | Sends a message.
-    sendMessage :: Message -> m ()
     -- | Dispatches a message to the correct object and slot.
     --
     -- If the object or slot does not exist it will signal an error using
@@ -90,6 +91,9 @@ class MonadIO m => MonadDispatch c m | m -> c where
     dispatchMessage :: Message -> m ()
     -- | Signals that a protocol error has occured.
     protocolError :: ObjId -> String -> m ()
+
+class Monad m => MonadSend m where
+    sendMessage :: Message -> m ()
 
 -- | Makes it possible to lookup the name and version, as specified in the
 -- protocol, of an interface.
@@ -114,7 +118,7 @@ consVer :: DispatchInterface i => SignalConstructor c i m -> Word32
 consVer = interfaceVersion . consInterface
 
 -- | Creates a new object, using the given constructor.
-newObject :: (Dispatchable c i, MonadDispatch c m)
+newObject :: (Dispatchable c i, MonadObject c m)
           => SignalConstructor c i m -- ^ The object constructor.
           -> m (NewId, Object c i)   -- ^ The new object and its Id
 newObject f = do
@@ -124,14 +128,14 @@ newObject f = do
     return (n, o)
 
 -- | Creates a new object if a constructor is given.
-maybeNewObject :: (Dispatchable c i, MonadDispatch c m)
+maybeNewObject :: (Dispatchable c i, MonadObject c m)
           => Maybe (SignalConstructor c i m)
           -> m (Maybe NewId, Maybe (Object c i))   -- ^ The new object and its Id
 maybeNewObject Nothing     = return (Nothing, Nothing)
 maybeNewObject (Just cons) = liftM (Just *** Just) (newObject cons)
 
 -- | Registers a new 'Object' using the given constructor.
-regObject :: MonadDispatch c m
+regObject :: MonadObject c m
           => Maybe (String, Word32)                         -- ^ An interface name and version the constructor must match,
                                                             -- or 'Nothing' if this has already been enforced
                                                             -- by the type system.

@@ -1,14 +1,21 @@
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell #-}
+
 module Test.Api.Gen
     ( runTest
     , genTests
+    , testResult
     )
 where
 
 import Control.Applicative
-import Control.Concurrent
 import Control.Monad
-import Control.Monad.IO.Class
+import Control.Monad.Free
+import Control.Monad.Free.TH
+import Control.Monad.Writer
+import Data.Either
 import Data.Maybe
 import Data.List
 import qualified Graphics.Wayland.Protocol as P
@@ -16,74 +23,44 @@ import Graphics.Wayland.TH
 import Graphics.Wayland.Dispatch
 import Graphics.Wayland.W
 import Graphics.Wayland.Wire
-import Graphics.Wayland.Wire.Message
-import System.IO.Error
 import qualified Test.Api.Client as C
 import Language.Haskell.TH
 import Prelude
-import System.Posix
 import Test.Arbitrary ()
-import Test.Fd
 import Test.QuickCheck
-import Test.QuickCheck.Monadic
 import Text.Printf
 
-type PIO = PropertyM IO
+type FT b = Free (TestF b)
 
--- | Run an IO computation in the PropertyM monad, and catch any exceptions.
-runAndCatch :: IO a -> PIO a
-runAndCatch m = do
-    res <- run $ tryIOError m
-    case res of
-         Left  e -> fail $ "Caught IO error: " ++ show e
-         Right a -> return a
+data TestF b a =
+    TestMessage Message a
+  | TestResult b a
+  deriving (Functor)
 
--- | Creates two connected sockets.
-getSockets :: Maybe String -> IO (Socket, Socket)
-getSockets addr = do
-    ls   <- listen addr
-    cVar <- newEmptyMVar
-    sVar <- newEmptyMVar
+$(makeFree ''TestF)
 
-    _ <- forkFinally (accept ls) (putMVar sVar)
-    _ <- forkFinally (connect addr) (putMVar cVar)
+instance MonadSend (Free (TestF b)) where
+    sendMessage = testMessage
 
-    -- This will throw an exception if it does not pattern match, but that's okay.
-    Right cSock <- readMVar cVar
-    Right sSock <- readMVar sVar
-
-    close ls
-    return (sSock, cSock)
+runTestF :: FT b a -> (a, [b], [Message])
+runTestF free =
+    let (a, w) = runWriter (foldFree f free)
+    in (a, lefts w, rights w)
+    where
+        f (TestMessage m a) = tell [Right m] >> return a
+        f (TestResult  b a) = tell [Left  b] >> return a
 
 -- | Runs a test using two W computations.
---
--- The W computations will be given a socket from a pair of connected sockets.
-runTest :: (AllocLimits ma, AllocLimits mb) => W ma IO a -> W mb IO b -> PIO (a, b)
-runTest server client = do
-    (ss, cs) <- runAndCatch $ getSockets Nothing
-    cVar     <- run newEmptyMVar
-    sVar     <- run newEmptyMVar
-
-    _ <- runAndCatch . forkFinally (runW ss server) $ (\e -> printEx e >> putMVar sVar e) . collapse
-    _ <- runAndCatch . forkFinally (runW cs client) $ (\e -> printEx e >> putMVar cVar e) . collapse
-
-    a <- runAndCatch (readMVar sVar)
-    b <- runAndCatch (readMVar cVar)
-
-    runAndCatch $ close ss
-    runAndCatch $ close cs
-
-    case (a, b) of
-         (Left e  , _       ) -> fail $ "Server error: " ++ e
-         (_       , Left e  ) -> fail $ "Client error: " ++ e
-         (Right a', Right b') -> return (a', b')
-    where
-        printEx (Left e) = putStrLn e
-        printEx _        = return ()
-
-        collapse (Left e)          = Left $ show e
-        collapse (Right (Left e))  = Left $ show e
-        collapse (Right (Right a)) = Right a
+runTest :: (AllocLimits ma, AllocLimits mb, Eq b, Show b)
+        => ObjectManager ma (FT b)
+        -> ObjectManager mb (FT b)
+        -> (Message -> W ma (FT b) x)
+        -> W mb (FT b) y
+        -> (ObjectManager ma (FT b), ObjectManager mb (FT b), x, y, [b], [b])
+runTest mgrA mgrB server client =
+    let ((Right rc, mgrB'), resClient, [msg]) = runTestF $ runW client mgrB
+        ((Right rs, mgrA'), resServer, []   ) = runTestF $ runW (server msg) mgrA
+    in (mgrA', mgrB', rs, rc, resServer, resClient)
 
 protocol :: P.Protocol
 protocol = C.testProtocol
@@ -122,9 +99,9 @@ signalConsType :: Side -> Bool -> Maybe String -> Type
 signalConsType side n i =
     let cons = ConT ''SignalConstructor
         obj  = ConT (objectName side i)
-        w    = AppT (AppT (ConT ''W) c) (ConT ''IO)
+        m    = mkName "m"
         c    = ConT $ sideName side
-    in wrapMaybe n $ foldl AppT cons [c, obj, w]
+    in ForallT [PlainTV m] [AppT (ConT ''Monad) (VarT m)] $ wrapMaybe n $ foldl AppT cons [c, obj, VarT m]
 
 -- | Generates the receiving part of the test.
 --
@@ -133,22 +110,20 @@ signalConsType side n i =
 genReceiver :: Side -> Name -> String -> (String, [P.Type]) -> Q Dec
 genReceiver side r obj (func, args) = do
     objId      <- newName "o"
-    var        <- newName "var"
     input      <- mapM (\_ -> newName "i") $ filter (not . isNewType) args
     Just cons  <- lookupValueName . (prefix side ++) . toCamelU $ printf "%s_%s" obj "Slots"
     Just field <- lookupValueName . (prefix side ++) . toCamelL $ printf "%s_%s" obj func
 
     let body =
-            [| do
-                $(varP var) <- liftIO $ newEmptyMVar
-                registerObject (Object $(varE objId)) $(recConE cons [(,) field <$> recvFunc] )
-                recvAndDispatch
-                liftIO $ readMVar $(varE var)
+            [|
+                \msg -> do
+                    registerObject (Object $(varE objId)) $(recConE cons [(,) field <$> recvFunc] )
+                    dispatchMessage msg
             |]
         recvFunc =
             lamE
                 (zipWithNew (\_ _  -> wildP) args (map varP input))
-                [| liftIO $ putMVar $(varE var) $(tupE (zipWith mkTupVar input (filter (not . isNewType) args))) |]
+                [| lift (testResult $(tupE (zipWith mkTupVar input (filter (not . isNewType) args)))) |]
 
         mkTupVar i (P.TypeObject True  _) = [| fmap (Object . unObject) $(varE i) |]
         mkTupVar i (P.TypeObject False _) = [| Object . unObject $ $(varE i) |]
@@ -180,7 +155,7 @@ genSender side s obj (func, args) = do
 
         newArgSig n i v = SigE v $ signalConsType side n i
 
-        dummyCons = LamE [WildP] $ AppE (VarE 'return) (VarE 'undefined)
+        dummyCons = AppE (VarE 'const) (AppE (VarE 'return) (VarE 'undefined))
 
         bodyArgs = zipWithNew newArg args $ map VarE input
         body     = foldl AppE (VarE field) (signal : zipWithFixed (AppE $ VarE 'fixedToDouble) args bodyArgs)
@@ -192,8 +167,8 @@ genTest :: Side -> String -> (String, [P.Type]) -> Q (Name, Dec)
 genTest side obj func@(funcName, args) = do
     let testName = mkName $ printf "prop_%s_%s" obj funcName
     o     <- newName "o"
-    input <- mapM (\_ -> newName "i") nonNewArgs
     out   <- mapM (\_ -> newName "x") nonNewArgs
+    input <- mapM (\_ -> newName "i") nonNewArgs
     r     <- newName "reciever"
     s     <- newName "sender"
     (,) testName <$>
@@ -207,35 +182,15 @@ genTest side obj func@(funcName, args) = do
         nonNewArgs = filter (not . isNewType) args
         body r s o out input =
             normalB
-            [| monadicIO $ do
-                let fds       = $(listE $ findFds input nonNewArgs)
-                    expNonFds = $(tupE  $ findNonFds (map varE input) nonNewArgs)
-                pre ($(varE o) /= 0)
-                pre =<< (not . or) <$> mapM (run . fdExists) fds
-                paths <- run $ createFds fds
-                ($(tupP $ map varP out), _) <-
-                    runTest
-                        ($(varE r) $(varE o))
-                        $(return $ foldl AppE (VarE s) (map VarE (o:input)))
-                let actNonFds = $(tupE  $ findNonFds (zipWithFixed (appE $ varE 'doubleToFixed) nonNewArgs (map varE out)) nonNewArgs)
-                    actFds    = $(listE $ findFds out nonNewArgs)
-                assert =<< and <$> run (zipWithM compareFds fds actFds)
-                run . closeFds $ nub fds
-                mapM_ (run . removeLink) paths
-                stop $ actNonFds === expNonFds
+            [|
+                let (_, _, _, _, [ $(tupP $ map varP out) ], []) =
+                        runTest
+                            newObjectManager
+                            newObjectManager
+                            ($(varE r) $(varE o))
+                            $(return $ foldl AppE (VarE s) (map VarE (o:input)))
+                in $(tupE (zipWithFixed (appE $ varE 'doubleToFixed) nonNewArgs (map varE out))) === $(tupE $ map varE input)
             |]
-
-        findNonFds []     _      = []
-        findNonFds (i:is) (a:as) =
-            case a of
-                 P.TypeFd -> findNonFds is as
-                 _        -> i : findNonFds is as
-
-        findFds []     _      = []
-        findFds (i:is) (a:as) =
-            case a of
-                 P.TypeFd -> varE i : findFds is as
-                 _        -> findFds is as
 
 -- | Generates tests for all requests and events of an interface
 genInterfaceTests :: P.Interface -> Q [(Name, Dec)]

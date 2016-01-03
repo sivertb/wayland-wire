@@ -18,37 +18,20 @@ import Test.Message
 import Test.QuickCheck
 import Test.QuickCheck.Monadic
 
-newtype TestM a = TestM (ReaderT MessageLookup IO a)
-    deriving ( Functor
-             , Applicative
-             , Monad
-             , MonadReader MessageLookup
-             , MonadIO
-             )
-
-instance SocketError TestM where
-    sockErr = fail . show
-
-instance SocketLookup TestM where
-    msgLookup = ask
-
-runTestM :: MessageLookup -> TestM a -> IO a
-runTestM lf (TestM tm) = runReaderT tm lf
-
-server :: MVar () -> Message -> TestM ()
+server :: MVar () -> Message -> IO ()
 server fence msg = do
     ls <- listen Nothing
-    liftIO $ putMVar fence ()
+    putMVar fence ()
     s  <- accept ls
     send s msg
     close s
     close ls
 
-client :: MVar () -> TestM Message
-client fence = do
+client :: MessageLookup -> MVar () -> IO Message
+client lf fence = do
     liftIO $ takeMVar fence
     s <- connect Nothing
-    m <- recv s
+    m <- recv lf s
     close s
     return m
 
@@ -94,7 +77,7 @@ prop_sendRecv msg =
                 fds = msgFds msg
             paths <- createFds $ nub fds
             fence <- newEmptyMVar
-            (_, res) <- runSockets (runTestM lf $ server fence msg) (runTestM lf $ client fence)
+            (_, res) <- runSockets (server fence msg) (client lf fence)
             eq <- case res of
                        Nothing -> return False
                        Just m  -> cmpMsg msg m

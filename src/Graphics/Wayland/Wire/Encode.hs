@@ -11,7 +11,6 @@ module Graphics.Wayland.Wire.Encode
 where
 
 import Control.Monad
-import Control.Monad.IO.Class
 import Data.Int
 import Data.Word
 import Data.Monoid
@@ -31,7 +30,7 @@ instance Encodable Message where
 instance (ArgType a, Encodable b) => Encodable (a -> b) where
     encode op obj args a = encode op obj (toArg a : args)
 
-instance MonadIO m => Decodable (m a) a m where
+instance Monad m => Decodable (m a) a m where
     decode args err m =
         case (args, err) of
              ([], Nothing) -> liftM Right m
