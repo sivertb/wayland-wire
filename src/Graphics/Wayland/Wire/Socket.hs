@@ -13,6 +13,7 @@ where
 
 import Control.Applicative
 import Control.Concurrent.MVar
+import Control.Exception
 import Control.Monad
 import Data.Maybe
 import Data.Monoid
@@ -109,21 +110,36 @@ close sock = withSocket sock $ \s -> do
     S.close s
     when ls $ removeLink path
 
--- | Helper function for 'recv'. Pulls data from the socket until it has enough
--- to parse a full 'WireMsg'. If the parse fails, it throws an exception.
-recvLoop :: S.Socket -> Decoder Message -> IO ((S.Socket, Raw), Message)
-recvLoop sock q = do
-    (msg, _, cmsgs) <- recvMsg sock 4096
-    let p = pushInput q (Raw msg (concat $ mapMaybe fdData cmsgs))
-    case p of
-         Done i _ a -> return ((sock, i), a)
-         Fail _ _ e -> ioError (userError e)
-         _          -> recvLoop sock p
+-- | Helper function for 'recv'.
+--
+-- Pulls data from the socket until it has enough to parse a full 'WireMsg'. If
+-- the parse fails, it returns exception.
+--
+-- The function is meant to be called with masked exceptions. 'recvMsg' is
+-- interruptible and can be interrupted even with exceptions masked, but
+-- everything else is safe from asynchronous exceptions.
+recvLoop :: MessageLookup -> S.Socket -> Raw -> IO ((S.Socket, Raw), Either SomeException Message)
+recvLoop lf sock oldInp = do
+    res <- (Right <$> recvMsg sock 4096) `catch` (return . Left)
+    case res of
+      Left  err             -> return ((sock, oldInp), Left err)
+      Right (msg, _, cmsgs) -> do
+          let newInp = Raw msg (concat $ mapMaybe fdData cmsgs)
+              inp    = oldInp <> newInp
+
+          case runIncremental (getMsg lf) `pushInput` inp of
+            Done left _ a -> return ((sock, left), Right a)
+            Fail _    _ e -> return ((sock, inp), Left . SomeException $ userError e)
+            _             -> recvLoop lf sock inp
 
 -- | Receives a message from the socket.
 recv :: MessageLookup -> Socket -> IO Message
-recv lf (Socket mvar) =
-    modifyMVar mvar $ \(sock, inp) -> recvLoop sock $ pushInput (runIncremental $ getMsg lf) inp
+recv lf (Socket mvar) = do
+    res <- modifyMVarMasked mvar . uncurry $ recvLoop lf
+
+    case res of
+      Left  err -> throwIO err
+      Right msg -> return msg
 
 -- | Sends a message on the socket.
 send :: Socket -> Message -> IO ()
