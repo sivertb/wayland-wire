@@ -19,5 +19,5 @@ mkDerivation {
     transformers unix utf8-string
   ];
   description = "Haskell implementation of the Wayland wire protocol";
-  license = "GPL";
+  license = stdenv.lib.licenses.gpl3;
 }

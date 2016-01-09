@@ -3,7 +3,7 @@ version:             0.1.0
 synopsis:            Haskell implementation of the Wayland wire protocol
 description:
     Implements the Wayland wire protocol in Haskell.
-license:             GPL
+license:             GPL-3
 license-file:        LICENSE
 author:              Sivert Berg
 maintainer:          Sivert Berg <code@trev.is>
