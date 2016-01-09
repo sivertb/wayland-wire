@@ -24,8 +24,8 @@ import Graphics.Wayland.Wire.Get
 import Graphics.Wayland.Wire.Put
 import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Wire.Raw
+import Graphics.Wayland.Wire.Msg
 import qualified Network.Socket as S
-import Network.Socket.Msg
 import Prelude
 import System.Posix
 import System.IO.Unsafe
@@ -122,8 +122,8 @@ recvLoop :: MessageLookup -> S.Socket -> Raw -> IO ((S.Socket, Raw), Either Some
 recvLoop lf sock oldInp = do
     res <- (Right <$> recvMsg sock 4096) `catch` (return . Left)
     case res of
-      Left  err             -> return ((sock, oldInp), Left err)
-      Right (msg, _, cmsgs) -> do
+      Left  err          -> return ((sock, oldInp), Left err)
+      Right (msg, cmsgs) -> do
           let newInp = Raw msg (concat $ mapMaybe fdData cmsgs)
               inp    = oldInp <> newInp
 
@@ -146,4 +146,4 @@ send :: Socket -> Message -> IO ()
 send (Socket mvar) msg =
     withMVar mvar $ \(sock, _) -> do
         let (Raw bs fds) = runPut $ putMsg msg
-        sendMsg sock bs Nothing [CMsg S.sOL_SOCKET S.sCM_RIGHTS (fdsToBs fds)]
+        sendMsg sock bs [CMsg S.sOL_SOCKET S.sCM_RIGHTS (fdsToBs fds)]

@@ -20,6 +20,7 @@ library
                         Graphics.Wayland.Wire
                         Graphics.Wayland.W
   other-modules:        Graphics.Wayland.TH
+                        Graphics.Wayland.Wire.Msg
                         Graphics.Wayland.Wire.Message
                         Graphics.Wayland.Wire.Socket
                         Graphics.Wayland.Wire.Decoder
@@ -33,7 +34,6 @@ library
                         binary,
                         bytestring,
                         network,
-                        network-msg >= 0.5,
                         utf8-string,
                         free,
                         mtl >= 2.2.1,
@@ -43,6 +43,10 @@ library
                         diet-set,
                         th-lift,
                         directory
+  include-dirs:         include
+  includes:             cmsg.h
+  c-sources:            cbits/cmsg.c
+  build-tools:          c2hs
   hs-source-dirs:       src/
   default-language:     Haskell2010
   ghc-options:          -Wall
@@ -51,7 +55,8 @@ test-suite test
   type:                 exitcode-stdio-1.0
   default-language:     Haskell2010
   main-is:              test.hs
-  other-modules:        Test.Api
+  other-modules:        Graphics.Wayland.Wire.Msg
+                        Test.Api
                         Test.Api.Client
                         Test.Api.Server
                         Test.Arbitrary
@@ -61,6 +66,9 @@ test-suite test
                         Test.Get
                         Test.Message
                         Test.Socket
+  include-dirs:         include
+  includes:             cmsg.h
+  c-sources:            cbits/cmsg.c
   hs-source-dirs:       tests src
   ghc-options:          -Wall -fomit-interface-pragmas
   build-depends:        base >=4.7,
@@ -69,7 +77,6 @@ test-suite test
                         binary,
                         bytestring,
                         network,
-                        network-msg >= 0.5,
                         utf8-string,
                         free,
                         mtl >= 2.2.1,

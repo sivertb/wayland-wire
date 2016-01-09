@@ -1,7 +1,6 @@
-{ mkDerivation, base, binary, bytestring, containers, diet-set
-, directory, free, hxt, mtl, network, network-msg, QuickCheck
-, stdenv, template-haskell, th-lift, transformers, unix
-, utf8-string
+{ mkDerivation, base, binary, bytestring, c2hs, containers
+, diet-set, directory, free, hxt, mtl, network, QuickCheck, stdenv
+, template-haskell, th-lift, transformers, unix, utf8-string
 }:
 mkDerivation {
   pname = "wayland-wire";
@@ -9,14 +8,14 @@ mkDerivation {
   src = ./.;
   buildDepends = [
     base binary bytestring containers diet-set directory free hxt mtl
-    network network-msg template-haskell th-lift transformers unix
-    utf8-string
+    network template-haskell th-lift transformers unix utf8-string
   ];
   testDepends = [
     base binary bytestring containers diet-set directory free hxt mtl
-    network network-msg QuickCheck template-haskell th-lift
-    transformers unix utf8-string
+    network QuickCheck template-haskell th-lift transformers unix
+    utf8-string
   ];
+  buildTools = [ c2hs ];
   description = "Haskell implementation of the Wayland wire protocol";
   license = stdenv.lib.licenses.gpl3;
 }

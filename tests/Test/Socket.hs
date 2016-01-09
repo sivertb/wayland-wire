@@ -5,6 +5,7 @@ where
 
 import Control.Applicative
 import Control.Concurrent
+import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
 import Data.Maybe
@@ -19,13 +20,10 @@ import Test.QuickCheck
 import Test.QuickCheck.Monadic
 
 server :: MVar () -> Message -> IO ()
-server fence msg = do
-    ls <- listen Nothing
+server fence msg =
+    bracket (listen Nothing) close $ \ls -> do
     putMVar fence ()
-    s  <- accept ls
-    send s msg
-    close s
-    close ls
+    bracket (accept ls) close (`send` msg)
 
 client :: MessageLookup -> MVar () -> IO Message
 client lf fence = do
