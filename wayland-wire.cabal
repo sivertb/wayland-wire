@@ -51,6 +51,16 @@ test-suite test
   type:                 exitcode-stdio-1.0
   default-language:     Haskell2010
   main-is:              test.hs
+  other-modules:        Test.Api
+                        Test.Api.Client
+                        Test.Api.Server
+                        Test.Arbitrary
+                        Test.Decoder
+                        Test.Encode
+                        Test.Fd
+                        Test.Get
+                        Test.Message
+                        Test.Socket
   hs-source-dirs:       tests src
   ghc-options:          -Wall -fomit-interface-pragmas
   build-depends:        base >=4.7,
