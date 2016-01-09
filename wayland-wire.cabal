@@ -59,6 +59,7 @@ test-suite test
                         Test.Api
                         Test.Api.Client
                         Test.Api.Server
+                        Test.Api.Gen
                         Test.Arbitrary
                         Test.Decoder
                         Test.Encode
@@ -70,7 +71,7 @@ test-suite test
   includes:             cmsg.h
   c-sources:            cbits/cmsg.c
   hs-source-dirs:       tests src
-  ghc-options:          -Wall -fomit-interface-pragmas
+  ghc-options:          -fomit-interface-pragmas
   build-depends:        base >=4.7,
                         unix,
                         hxt,
