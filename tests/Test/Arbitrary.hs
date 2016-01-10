@@ -2,6 +2,7 @@ module Test.Arbitrary
 where
 
 import Control.Applicative
+import Data.Maybe
 import Data.Word
 import qualified Data.ByteString as BS
 import Graphics.Wayland.Dispatch
@@ -67,6 +68,7 @@ instance Arbitrary Enum' where
     arbitrary =
         Enum'
         <$> arbitrary
+        <*> arbitrary
         <*> arbitrary
         <*> arbitrary
         <*> arbitrary
@@ -139,3 +141,12 @@ instance Arbitrary Raw where
 
 instance Arbitrary (Object c i) where
     arbitrary = Object <$> arbitrary
+
+newtype ArbEnum e = ArbEnum { unArbEnum :: e }
+    deriving (Eq, Show, Ord)
+
+castArbEnum :: (WireEnum a, WireEnum b) => a -> ArbEnum b
+castArbEnum = ArbEnum . fromJust . fromWord32 . toWord32
+
+instance (Enum e, Bounded e, WireEnum e) => Arbitrary (ArbEnum e) where
+    arbitrary = ArbEnum <$> arbitraryBoundedEnum

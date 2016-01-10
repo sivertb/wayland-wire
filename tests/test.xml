@@ -39,6 +39,12 @@
     <request name="req_nullable_new_id">
 		<arg name="new_id" type="new_id" allow-null="true" interface="one_argument"/>
     </request>
+    <request name="req_enum">
+		<arg name="enum" type="uint" enum="enum"/>
+    </request>
+    <request name="req_bitfield">
+		<arg name="bitfield" type="uint" enum="bitfield"/>
+    </request>
 
     <request name="req_new_no_interface">
 		<arg name="new_id" type="new_id" />
@@ -77,11 +83,23 @@
     <event name="evt_nullable_new_id">
 		<arg name="new_id" type="new_id" allow-null="true" interface="one_argument"/>
     </event>
+    <event name="evt_enum">
+		<arg name="enum" type="int" enum="enum" />
+    </event>
+    <event name="evt_bitfield">
+		<arg name="bitfield" type="uint" enum="bitfield"/>
+    </event>
 
     <enum name="enum">
         <entry name="zero" value="0" />
         <entry name="one" value="1" />
         <entry name="three" value="3" />
+    </enum>
+
+    <enum name="bitfield" bitfield="true">
+        <entry name="a" value="1" />
+        <entry name="b" value="2" />
+        <entry name="c" value="4" />
     </enum>
   </interface>
 

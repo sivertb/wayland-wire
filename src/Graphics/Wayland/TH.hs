@@ -191,17 +191,22 @@ genIntegerType rt con =
              e <- newName "e"
              return (VarT e, [(e, [clsP ''WireEnum [varT e]])], [])
 
+-- | Generates the type of TypeEnum arguments.
+genEnumType :: Interface -> String -> Q Type
+genEnumType iface en = conT . mkNameU $ ifaceName iface ++ "_" ++ en
+
 -- | Generates the type of a single function argument, returning both the type,
 -- any type variables it contains that needs too be caught, predicates that
 -- must be fulfilled and optionally a list of types to add to the function's
 -- return value.
-genArgType :: RecordType -> Side -> P.Type -> Q (Type, [(Name, [PredQ])], [Type])
-genArgType rt s t =
+genArgType :: Interface -> RecordType -> Side -> P.Type -> Q (Type, [(Name, [PredQ])], [Type])
+genArgType iface rt s t =
     case t of
          TypeFixed      -> (, [], [])               <$> [t| Double    |]
          TypeFd         -> (, [], [])               <$> [t| Fd        |]
          TypeArray      -> (, [], [])               <$> [t| [Word32]  |]
          TypeString n   -> (, [], []) . wrapMaybe n <$> [t| String    |]
+         TypeEnum   e   -> (, [], []) <$> genEnumType iface e
          TypeObject n i -> return . (, [], []) $ genObjectType s n i
          TypeSigned     -> genIntegerType rt ''Int32
          TypeUnsigned   -> genIntegerType rt ''Word32
@@ -214,9 +219,9 @@ mkTuple :: [Type] -> Type
 mkTuple ts = foldl AppT (TupleT $ length ts) ts
 
 -- | Generates a function type for a record field.
-genFuncType :: RecordType -> Side -> [P.Type] -> Q Type
-genFuncType rt s ts = do
-    (ts', is', rs') <- unzip3 <$> mapM (genArgType rt s) ts
+genFuncType :: Interface -> RecordType -> Side -> [P.Type] -> Q Type
+genFuncType iface rt s ts = do
+    (ts', is', rs') <- unzip3 <$> mapM (genArgType iface rt s) ts
 
     let is  = concat is'
         rs  = concat rs'
@@ -256,7 +261,7 @@ genRecord rt s args iface =
                          , conT typeName
                          , varT $ mkName "m"
                          ]
-        mkField (n, t) = (fieldName iface n, NotStrict, ) <$> genFuncType rt s t
+        mkField (n, t) = (fieldName iface n, NotStrict, ) <$> genFuncType iface rt s t
 
 -- | Returns the slots of an interface.
 getSlots :: Side -> Interface -> [(String, [P.Type])]
@@ -461,33 +466,20 @@ genDispatchableInstance s iface =
         c = conT $ sideName s
         i = conT . mkNameU $ ifaceName iface
 
+genBitfield :: Interface -> Enum' -> Q [Dec]
+genBitfield iface en
+  | not (enumBitfield en) = return []
+  | otherwise             = (: []) <$> tySynD bfName [] [t| Bitfield $(conT bitsName) |]
+    where
+        prefix   = ifaceName iface ++ "_" ++ enumName en
+        bfName   = mkNameU prefix
+        bitsName = mkNameU $ prefix ++ "_bits"
+
 -- | Generates code for a single enum.
 genEnum :: Interface -> Enum' -> Q [Dec]
-genEnum iface en =
-    (\a b c d -> [a, b, c, d])
-    <$> dataD (cxt []) datName [] (map (\v -> normalC (valName v) []) (enumValues en)) [''Show, ''Eq, ''Ord]
-    <*> instanceD (cxt []) [t| Enum $(conT datName) |]
-        [ caseD 'succ
-        $ zipWith (\pat expr -> match pat (normalB expr) [])
-          (map (flip conP [] . snd) vals)
-          (map (conE . snd) (tail vals) ++ [ [| error "succ called on last enum value" |] ])
-
-        , caseD 'pred
-        $ zipWith (\pat expr -> match pat (normalB expr) [])
-          (map (flip conP [] . snd) vals)
-          ([| error "pred called on first enum value" |] : map (conE . snd) vals)
-
-        , caseD 'toEnum
-        $  map (\(val, name) -> match (intP val) (normalB $ conE name) []) vals
-        ++ [ match wildP (normalB [| error "toEnum - value is out of range" |]) [] ]
-
-        , caseD 'fromEnum
-        $ map (\(val, name) -> match (conP name []) (normalB $ intE val) []) vals
-        ]
-    <*> instanceD (cxt []) [t| Bounded $(conT datName) |]
-        [ funD 'minBound [clause [] (normalB (conE . snd $ head vals)) []]
-        , funD 'maxBound [clause [] (normalB (conE . snd $ last vals)) []]
-        ]
+genEnum iface en = do
+    (\a b c -> [a, b] ++ c)
+    <$> dataD (cxt []) datName [] (map (\v -> normalC (valName v) []) (enumValues en)) [''Show, ''Eq, ''Ord, ''Enum, ''Bounded]
     <*> instanceD (cxt []) [t| WireEnum $(conT datName) |]
         [ caseD 'fromWord32
         $  map (\(val, name) -> match (intP val) (normalB [| Just $(conE name) |]) []) vals
@@ -496,11 +488,12 @@ genEnum iface en =
         , caseD 'toWord32
         $ map (\(val, name) -> match (conP name []) (normalB $ intE val) []) vals
         ]
+    <*> genBitfield iface en
     where
         i          = mkName "i"
         caseD n ms = funD n [clause [varP i] (normalB (caseE (varE i) ms)) []]
         vals       = sort . map (entryValue &&& valName) $ enumValues en
-        prefix     = ifaceName iface ++ "_" ++ enumName en
+        prefix     = ifaceName iface ++ "_" ++ enumName en ++ if enumBitfield en then "_bits" else ""
         datName    = mkNameU prefix
         valName    = mkNameU . (prefix ++) . ("_" ++) . entryName
 

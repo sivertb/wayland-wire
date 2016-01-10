@@ -185,6 +185,7 @@ data Type =
   | TypeString Bool
   | TypeObject Bool (Maybe String)
   | TypeNew    Bool (Maybe String)
+  | TypeEnum   String
     deriving (Eq, Show)
 
 xpType :: PU Type
@@ -192,17 +193,16 @@ xpType =
     xpWrapMaybe ( toType
                 , fromType
                 ) $
-    xpTriple (xpAttr "type" xpText)
+    xp4Tuple (xpAttr "type" xpText)
              (xpOption $ xpAttr "interface" xpText)
-             (xpWrap (toBool, fromBool) . xpOption $ xpAttr "allow-null" xpText)
+             (xpOption $ xpAttr "enum" xpText)
+             (xpDefault False $ xpAttr "allow-null" xpBool)
     where
-        toBool     = maybe False (== "true")
-        fromBool b = if b then Just "true" else Nothing
 
-        toType (typeName, interface, allowNull) =
+        toType (typeName, interface, enum, allowNull) =
             case typeName of
-                 "int"      -> Just TypeSigned
-                 "uint"     -> Just TypeUnsigned
+                 "int"      -> Just $ maybe TypeSigned TypeEnum enum
+                 "uint"     -> Just $ maybe TypeUnsigned TypeEnum enum
                  "fixed"    -> Just TypeFixed
                  "fd"       -> Just TypeFd
                  "array"    -> Just TypeArray
@@ -211,33 +211,36 @@ xpType =
                  "new_id"   -> Just $ TypeNew allowNull interface
                  _          -> Nothing
 
-        fromType (TypeSigned         ) = ("int", Nothing, False)
-        fromType (TypeUnsigned       ) = ("uint", Nothing, False)
-        fromType (TypeFixed          ) = ("fixed", Nothing, False)
-        fromType (TypeFd             ) = ("fd", Nothing, False)
-        fromType (TypeArray          ) = ("array", Nothing, False)
-        fromType (TypeString an      ) = ("array", Nothing, an)
-        fromType (TypeObject an iface) = ("object", iface, an)
-        fromType (TypeNew    an iface) = ("new_id", iface, an)
+        fromType (TypeSigned         ) = ("int", Nothing, Nothing, False)
+        fromType (TypeUnsigned       ) = ("uint", Nothing, Nothing, False)
+        fromType (TypeFixed          ) = ("fixed", Nothing, Nothing, False)
+        fromType (TypeFd             ) = ("fd", Nothing, Nothing, False)
+        fromType (TypeArray          ) = ("array", Nothing, Nothing, False)
+        fromType (TypeString an      ) = ("array", Nothing, Nothing, an)
+        fromType (TypeObject an iface) = ("object", iface, Nothing, an)
+        fromType (TypeNew    an iface) = ("new_id", iface, Nothing, an)
+        fromType (TypeEnum   enum    ) = ("uint", Nothing, Just enum, False)
 
 data Enum' =
     Enum' { enumName        :: String
           , enumSince       :: Maybe Int
           , enumDescription :: Maybe Description
           , enumValues      :: [Entry]
+          , enumBitfield    :: Bool
           }
           deriving (Eq, Show)
 
 instance XmlPickler Enum' where
     xpickle =
         xpElem "enum" $
-        xpWrap ( uncurry4 Enum'
-               , \(Enum' a b c d) -> (a, b, c, d)
+        xpWrap ( \(a, b, c, d, e) -> Enum' a b c d e
+               , \(Enum' a b c d e) -> (a, b, c, d, e)
                ) $
-        xp4Tuple (xpAttr "name" xpText)
+        xp5Tuple (xpAttr "name" xpText)
                  xpSince
                  xpDesc
                  (xpList xpickle)
+                 (xpDefault False $ xpAttr "bitfield" xpBool)
 
 data Entry =
     Entry { entryName        :: String
@@ -259,6 +262,12 @@ instance XmlPickler Entry where
                  xpSince
                  xpSummary
                  xpDesc
+
+xpBool :: PU Bool
+xpBool = xpWrap (toBool, fromBool) xpText
+    where
+        toBool     = (== "true")
+        fromBool b = if b then "true" else "false"
 
 xpDesc :: PU (Maybe Description)
 xpDesc =

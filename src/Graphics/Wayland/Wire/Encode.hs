@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE IncoherentInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Graphics.Wayland.Wire.Encode
     ( Encodable
     , Decodable
@@ -71,6 +72,12 @@ instance ArgType Int where
 instance ArgType Word32 where
     toArg = ArgWord
     fromArg (ArgWord w) = Just w
+    fromArg _           = Nothing
+
+instance WireEnum w => ArgType w where
+    toArg = ArgWord . toWord32
+    fromArg (ArgWord w) = fromWord32 w
+    fromArg (ArgInt  i) = fromInt32 i
     fromArg _           = Nothing
 
 instance ArgType Fd where

@@ -26,7 +26,7 @@ import Graphics.Wayland.Wire
 import qualified Test.Api.Client as C
 import Language.Haskell.TH
 import Prelude
-import Test.Arbitrary ()
+import Test.Arbitrary
 import Test.QuickCheck
 import Text.Printf
 
@@ -132,12 +132,13 @@ genReceiver side r obj (func, args) = do
     funD r [ clause [varP objId] (normalB body) [] ]
 
 -- | Apply a function to all fixed arguments.
-zipWithFixed :: (a -> a) -> [P.Type] -> [a] -> [a]
-zipWithFixed _ []     _      = []
-zipWithFixed f (a:as) (i:is) =
+zipArgs :: (a -> a) -> (a -> a) -> [P.Type] -> [a] -> [a]
+zipArgs _ _ []     _      = []
+zipArgs f g (a:as) (i:is) =
     case a of
-         P.TypeFixed -> f i : zipWithFixed f as is
-         _           -> i   : zipWithFixed f as is
+         P.TypeFixed  -> f i : zipArgs f g as is
+         P.TypeEnum _ -> g i : zipArgs f g as is
+         _            -> i   : zipArgs f g as is
 
 -- | Generates the sender part of the test.
 --
@@ -158,7 +159,7 @@ genSender side s obj (func, args) = do
         dummyCons = AppE (VarE 'const) (AppE (VarE 'return) (VarE 'undefined))
 
         bodyArgs = zipWithNew newArg args $ map VarE input
-        body     = foldl AppE (VarE field) (signal : zipWithFixed (AppE $ VarE 'fixedToDouble) args bodyArgs)
+        body     = foldl AppE (VarE field) (signal : zipArgs (AppE $ VarE 'fixedToDouble) (AppE $ VarE 'unArbEnum) args bodyArgs)
 
     funD s [ clause (map varP (objId:input)) (normalB (return body)) [] ]
 
@@ -189,7 +190,14 @@ genTest side obj func@(funcName, args) = do
                             newObjectManager
                             ($(varE r) $(varE o))
                             $(return $ foldl AppE (VarE s) (map VarE (o:input)))
-                in $(tupE (zipWithFixed (appE $ varE 'doubleToFixed) nonNewArgs (map varE out))) === $(tupE $ map varE input)
+                in
+                $(tupE
+                 (zipArgs
+                    (appE $ varE 'doubleToFixed)
+                    (appE $ varE 'castArbEnum)
+                    nonNewArgs
+                    (map varE out)))
+                === $(tupE $ map varE input)
             |]
 
 -- | Generates tests for all requests and events of an interface

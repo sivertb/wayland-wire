@@ -41,6 +41,7 @@ data Message =
 data MsgArg =
     ArgInt    Int32
   | ArgWord   Word32
+  | ArgEnum   Word32
   | ArgFixed  Fixed
   | ArgFd     Fd
   | ArgString (Maybe String)
@@ -86,6 +87,7 @@ getArg t =
     case t of
          TypeSigned     -> ArgInt    <$> getInt32
          TypeUnsigned   -> ArgWord   <$> getWord32
+         TypeEnum   _   -> ArgEnum   <$> getWord32
          TypeArray      -> ArgArray  <$> getArray
          TypeString _   -> ArgString <$> getString
          TypeObject _ _ -> ArgObject . fmap ObjId <$> getId
@@ -165,6 +167,7 @@ putArg :: MsgArg -> Put
 putArg arg =
     case arg of
          ArgWord   u -> putWord32 u
+         ArgEnum   e -> putWord32 e
          ArgInt    i -> putWord32 $ fromIntegral i
          ArgFixed  f -> putWord32 . fromIntegral $ unFixed f
          ArgFd     f -> putFd f

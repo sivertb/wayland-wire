@@ -14,11 +14,19 @@ module Graphics.Wayland.Types
     , OpCode (..)
     , WireEnum (..)
     , newFromObj
+
+    , Bitfield
+    , fromBitfield
+    , toBitfield
     )
 where
 
+import Control.Arrow
+import Data.Bits
+import Data.Foldable
 import Data.Int
 import Data.Word
+import qualified Data.Set as S
 
 newtype ObjId = ObjId { unObjId :: Word32 }
     deriving (Show, Eq, Ord, Enum, Num)
@@ -47,6 +55,35 @@ instance WireEnum Word32 where
 instance WireEnum Int32 where
     fromInt32 = Just
     toInt32 = id
+
+-- | Represents bitfield enums.
+newtype Bitfield a = Bitfield { unBitfield :: S.Set a }
+    deriving (Eq, Show)
+
+instance (Ord a, Bounded a, Enum a, WireEnum a) => WireEnum (Bitfield a) where
+    toWord32 = foldl' (.|.) 0 . map toWord32 . fromBitfield
+    fromWord32 w =
+        Just
+        . toBitfield
+        . map snd
+        . filter ((/= 0) . fst)
+        $ map ((.&. w) . toWord32 &&& id) [minBound .. maxBound]
+
+instance (Ord a, Enum a, Bounded a) => Bounded (Bitfield a) where
+    minBound = toBitfield []
+    maxBound = toBitfield [minBound .. maxBound]
+
+instance (Ord a, Enum a, Bounded a) => Enum (Bitfield a) where
+    toEnum i = toBitfield . map snd . filter fst $ map (testBit i . fromEnum &&& id) [minBound .. maxBound]
+    fromEnum = sum . map ((2^) . fromEnum) . fromBitfield
+
+-- | Converts a set of bits into a 'Bitfield'.
+toBitfield :: Ord a => [a] -> Bitfield a
+toBitfield = Bitfield . S.fromList
+
+-- | Converts from a 'Bitfield' into the individual bits.
+fromBitfield :: Ord a => Bitfield a -> [a]
+fromBitfield = S.toList . unBitfield
 
 -- | Converts an 'ObjId' to a 'NewId'.
 newFromObj :: ObjId -> NewId
