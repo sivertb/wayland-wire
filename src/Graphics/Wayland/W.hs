@@ -92,6 +92,7 @@ newtype W c m a = W { runW' :: ExceptT ObjectError (StateT (ObjectManager c m) m
     ( MonadState (ObjectManager c m)
     , MonadError ObjectError
     , Monad
+    , MonadIO
     , Functor
     , Applicative
     )
