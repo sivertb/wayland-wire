@@ -1,4 +1,4 @@
-module Graphics.Wayland.Wire.Msg
+module Network.Socket.Msg
     ( sendMsg
     , recvMsg
     , CMsg (..)

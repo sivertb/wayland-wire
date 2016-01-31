@@ -20,7 +20,6 @@ library
                         Graphics.Wayland.Wire
                         Graphics.Wayland.W
   other-modules:        Graphics.Wayland.TH
-                        Graphics.Wayland.Wire.Msg
                         Graphics.Wayland.Wire.Message
                         Graphics.Wayland.Wire.Socket
                         Graphics.Wayland.Wire.Decoder
@@ -28,6 +27,7 @@ library
                         Graphics.Wayland.Wire.Put
                         Graphics.Wayland.Wire.Encode
                         Graphics.Wayland.Wire.Raw
+                        Network.Socket.Msg
   build-depends:        base >=4.7,
                         unix,
                         hxt,
@@ -55,7 +55,7 @@ test-suite test
   type:                 exitcode-stdio-1.0
   default-language:     Haskell2010
   main-is:              test.hs
-  other-modules:        Graphics.Wayland.Wire.Msg
+  other-modules:        Network.Socket.Msg
                         Test.Api
                         Test.Api.Client
                         Test.Api.Server
