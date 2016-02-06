@@ -5,6 +5,7 @@ import System.Exit
 import Test.Api
 import Test.Encode
 import Test.Get
+import Test.Msg
 import Test.Message
 import Test.Socket
 
@@ -14,6 +15,7 @@ tests = [ apiTests
         , messageTests
         , socketTests
         , encodeTests
+        , msgTests
         ]
 
 main :: IO ()
