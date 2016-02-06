@@ -116,6 +116,7 @@ data CMsg =
          , cmsgType  :: Int
          , cmsgData  :: BS.ByteString
          }
+    deriving (Eq, Show)
 
 peekCMsgs :: Ptr MsgHdr -> Ptr CMsg -> IO [CMsg]
 peekCMsgs mPtr cPtr
@@ -140,13 +141,13 @@ pokeCMsgs mPtr (c:cs) cptr = do
     BS.unsafeUseAsCStringLen (cmsgData c) (\(cstr, len) -> copyBytes (cmsgPtr cptr) cstr len)
     pokeCMsgs mPtr cs (cmsgNxthdr mPtr cptr)
 
-allocaMsg :: Int -> (Ptr MsgHdr -> CStringLen -> IO a) -> IO a
+allocaMsg :: Int -> (Ptr MsgHdr -> CString -> IO a) -> IO a
 allocaMsg bufSize f =
     allocaBytes bufSize $ \buf ->
     allocaBytes ctrlLen $ \ctrl ->
     with (IoVec buf bufSize) $ \ioVec ->
     with (MsgHdr nullPtr 0 ioVec 1 ctrl ctrlLen 0) $ \hdr ->
-        f hdr (buf, bufSize)
+        f hdr buf
     where
         ctrlLen = 1024
 
@@ -167,7 +168,7 @@ sendMsg s bs cmsgs = withMsg bs cmsgs $ \msg ->
 
 recvMsg :: Socket -> Int -> IO (BS.ByteString, [CMsg])
 recvMsg s bufSize = allocaMsg bufSize $ \ptr cstr -> do
-    _              <- throwSocketErrorWaitRead s "recvMsg" $ c_recvmsg s ptr 0
+    len            <- throwSocketErrorWaitRead s "recvMsg" $ c_recvmsg s ptr 0
     cmsgs          <- peekCMsgs ptr (cmsgFirsthdr ptr)
-    bs             <- BS.packCStringLen cstr
+    bs             <- BS.packCStringLen (cstr, fromIntegral len)
     return (bs, cmsgs)
