@@ -30,13 +30,13 @@ import Prelude
 import System.Posix
 import System.IO.Unsafe
 
-newtype Socket = Socket (MVar (S.Socket, Raw))
+data Socket = Socket S.Socket (MVar Raw)
 
 withSocket :: Socket -> (S.Socket -> IO b) -> IO b
-withSocket (Socket mvar) f = withMVar mvar $ \(s, _) -> f s
+withSocket (Socket sock _) f = f sock
 
 wrapSocket :: S.Socket -> IO Socket
-wrapSocket s = Socket <$> newMVar (s, mempty)
+wrapSocket s = Socket s <$> newMVar mempty
 
 -- | Gets the full path of the socket.
 -- This function replicates what wayland does in it's add_socket function.
@@ -92,7 +92,7 @@ connect :: Maybe String -- ^ The path to connect to.
 connect name = do
     sock <- socket
     addr <- socketAddr name
-    withSocket sock $ \s -> S.connect s addr
+    withSocket sock (`S.connect` addr)
     return sock
 
 -- | Accepts an incoming connection on the socket.
@@ -118,24 +118,24 @@ close sock = withSocket sock $ \s -> do
 -- The function is meant to be called with masked exceptions. 'recvMsg' is
 -- interruptible and can be interrupted even with exceptions masked, but
 -- everything else is safe from asynchronous exceptions.
-recvLoop :: MessageLookup -> S.Socket -> Raw -> IO ((S.Socket, Raw), Either SomeException Message)
+recvLoop :: MessageLookup -> S.Socket -> Raw -> IO (Raw, Either SomeException Message)
 recvLoop lf sock oldInp = do
     res <- (Right <$> recvMsg sock 4096) `catch` (return . Left)
     case res of
-      Left  err          -> return ((sock, oldInp), Left err)
+      Left  err          -> return (oldInp, Left err)
       Right (msg, cmsgs) -> do
           let newInp = Raw msg (concat $ mapMaybe fdData cmsgs)
               inp    = oldInp <> newInp
 
           case runIncremental (getMsg lf) `pushInput` inp of
-            Done left _ a -> return ((sock, left), Right a)
-            Fail _    _ e -> return ((sock, inp), Left . SomeException $ userError e)
+            Done left _ a -> return (left, Right a)
+            Fail _    _ e -> return (inp , Left . SomeException $ userError e)
             _             -> recvLoop lf sock inp
 
 -- | Receives a message from the socket.
 recv :: MessageLookup -> Socket -> IO Message
-recv lf (Socket mvar) = do
-    res <- modifyMVarMasked mvar . uncurry $ recvLoop lf
+recv lf (Socket sock mvar) = do
+    res <- modifyMVarMasked mvar $ recvLoop lf sock
 
     case res of
       Left  err -> throwIO err
@@ -143,7 +143,6 @@ recv lf (Socket mvar) = do
 
 -- | Sends a message on the socket.
 send :: Socket -> Message -> IO ()
-send (Socket mvar) msg =
-    withMVar mvar $ \(sock, _) -> do
-        let (Raw bs fds) = runPut $ putMsg msg
-        sendMsg sock bs [CMsg S.sOL_SOCKET S.sCM_RIGHTS (fdsToBs fds)]
+send (Socket sock _) msg = sendMsg sock bs [CMsg S.sOL_SOCKET S.sCM_RIGHTS (fdsToBs fds)]
+    where
+        (Raw bs fds) = runPut $ putMsg msg

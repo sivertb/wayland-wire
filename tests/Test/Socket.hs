@@ -84,6 +84,37 @@ prop_sendRecv msg =
             return (eq, res)
         stop (counterexample (show (Just msg) ++ " /= " ++ show res) eq)
 
+-- | Verify that it's possible to close a socket that's "running" accept.
+prop_closeWhileAccept :: Property
+prop_closeWhileAccept =
+    monadicIO $ do
+        run $ do
+            ls  <- listen Nothing
+            var <- newEmptyMVar
+            _   <- forkFinally (accept ls) (putMVar var)
+            yield
+            close ls
+            void $ readMVar var
+        stop True
+
+-- | Verify that it's possible to close a socket while it's using 'recv'.
+prop_closeWhileRead :: Property
+prop_closeWhileRead =
+    monadicIO $ do
+        run $ do
+            ls  <- listen Nothing
+            var <- newEmptyMVar
+            _   <- forkFinally (void $ connect Nothing) (putMVar var)
+            s   <- accept ls
+            _   <- forkFinally (void $ recv undefined s) (putMVar var)
+            close s
+
+            void $ readMVar var
+            void $ readMVar var
+            close ls
+
+        stop True
+
 return []
 socketTests :: IO Bool
 socketTests = $quickCheckAll
