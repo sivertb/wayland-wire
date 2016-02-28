@@ -1,6 +1,7 @@
 module Test.Fd
 where
 
+import Control.Exception
 import Control.Monad
 import System.IO.Error
 import System.Posix
@@ -24,8 +25,10 @@ closeFds :: [Fd] -> IO ()
 closeFds = mapM_ closeFd
 
 compareFds :: Fd -> Fd -> IO Bool
-compareFds a b = do
-    let newLen = (fromIntegral a * fromIntegral b) `mod` 3323
-    setFdSize a newLen
-    fs <- getFdStatus b
-    return $ newLen == fileSize fs
+compareFds a b =
+    handle (const $ return False :: SomeException -> IO Bool) $ do
+        setFdSize a newLen
+        fs <- getFdStatus b
+        return $ newLen == fileSize fs
+    where
+        newLen = (fromIntegral a * fromIntegral b) `mod` 3323
