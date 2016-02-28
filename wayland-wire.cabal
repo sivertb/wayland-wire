@@ -87,5 +87,4 @@ test-suite test
                         diet-set,
                         th-lift,
                         directory,
-                        async,
                         QuickCheck

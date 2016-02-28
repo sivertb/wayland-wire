@@ -128,9 +128,10 @@ peekCMsgs mPtr cPtr
         <*> peekByteString cPtr
     (cmsg :) <$> peekCMsgs mPtr (cmsgNxthdr mPtr cPtr)
     where
+        offset = fromIntegral . ptrToIntPtr $ cmsgPtr nullPtr
         peekByteString bsPtr = do
             len  <- fromIntegral <$> {#get cmsghdr->cmsg_len#} bsPtr
-            BS.packCStringLen (cmsgPtr bsPtr, len)
+            BS.packCStringLen (cmsgPtr bsPtr, len - offset)
 
 pokeCMsgs :: Ptr MsgHdr -> [CMsg] -> Ptr CMsg -> IO ()
 pokeCMsgs _ [] _ = return ()

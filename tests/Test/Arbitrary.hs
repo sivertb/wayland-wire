@@ -103,7 +103,7 @@ instance Arbitrary Message where
     shrink (Message a b c) = [ Message a' b' c' | (a', b', c') <- shrink (a, b, c) ]
 
 instance Arbitrary Fd where
-    arbitrary = fromIntegral <$> (choose (500, 1000) :: Gen Word32)
+    arbitrary = fromIntegral <$> (choose (50, 1000) :: Gen Word32)
     shrink f = fromIntegral <$> shrink (fromIntegral f :: Word32)
 
 instance Arbitrary Fixed where
