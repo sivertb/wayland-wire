@@ -28,6 +28,21 @@ library
                         Graphics.Wayland.Wire.Encode
                         Graphics.Wayland.Wire.Raw
                         Network.Socket.Msg
+  other-extensions:     CPP
+                        DeriveFunctor
+                        FlexibleContexts
+                        FlexibleInstances
+                        FunctionalDependencies
+                        GeneralizedNewtypeDeriving
+                        ImpredicativeTypes
+                        IncoherentInstances
+                        MultiParamTypeClasses
+                        Rank2Types
+                        StandaloneDeriving
+                        TemplateHaskell
+                        TupleSections
+                        TypeFamilies
+                        UndecidableInstances
   build-depends:        base >=4.7,
                         unix,
                         hxt,
@@ -65,6 +80,7 @@ test-suite test
                         Test.Encode
                         Test.Fd
                         Test.Get
+                        Test.Msg
                         Test.Message
                         Test.Socket
   include-dirs:         include
@@ -72,6 +88,22 @@ test-suite test
   c-sources:            cbits/cmsg.c
   hs-source-dirs:       tests src
   ghc-options:          -fomit-interface-pragmas
+  ghc-prof-options:     -fprof-auto
+  other-extensions:     CPP
+                        DeriveFunctor
+                        FlexibleContexts
+                        FlexibleInstances
+                        FunctionalDependencies
+                        GeneralizedNewtypeDeriving
+                        ImpredicativeTypes
+                        IncoherentInstances
+                        MultiParamTypeClasses
+                        Rank2Types
+                        StandaloneDeriving
+                        TemplateHaskell
+                        TupleSections
+                        TypeFamilies
+                        UndecidableInstances
   build-depends:        base >=4.7,
                         unix,
                         hxt,
