@@ -5,13 +5,18 @@ where
 
 import Control.Applicative
 import Control.Concurrent
+import Control.Concurrent.Async
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
 import Data.Maybe
 import Data.List
 import Graphics.Wayland.Wire.Message
+import Graphics.Wayland.Wire.Put
+import Graphics.Wayland.Wire.Raw
 import Graphics.Wayland.Wire.Socket
+import qualified Network.Socket as S
+import Network.Socket.Msg
 import Prelude
 import System.Posix
 import Test.Fd
@@ -83,6 +88,47 @@ prop_sendRecv msg =
             mapM_ removeLink paths
             return (eq, res)
         stop (counterexample (show (Just msg) ++ " /= " ++ show res) eq)
+
+-- | Verify that its possible to receive two separate messages sent as a single
+-- message.
+prop_sendTwo :: Message -> Message -> Property
+prop_sendTwo msgA msgB =
+    monadicIO $ do
+        pre =<< (not . or) <$> mapM (run . fdExists) fds
+        (eq, res) <- run $ do
+            paths  <- createFds $ nub fds
+            fenceA <- newEmptyMVar
+            fenceB <- newEmptyMVar
+
+            s <- async . bracket (listen Nothing) close $ \ls -> do
+                putMVar fenceA ()
+                bracket (accept ls) close $ \(Socket s _) -> do
+                    sendMsg s msgsBs [CMsg S.sOL_SOCKET S.sCM_RIGHTS (fdsToBs msgsFds)]
+                    takeMVar fenceB
+
+            c <- async $ do
+                takeMVar fenceA
+                s  <- connect Nothing
+                mA <- recv lfA s
+                mB <- recv lfB s
+                putMVar fenceB ()
+                return (mA, mB)
+
+            wait s
+            (mA, mB) <- wait c
+            eq <- (&&) <$> cmpMsg msgA mA <*> cmpMsg msgB mB
+
+            closeFds $ nub fds
+            mapM_ removeLink paths
+
+            return (eq, (mA, mB))
+
+        stop (counterexample (show (msgA, msgB) ++ " /= " ++ show res) eq)
+    where
+        (Raw msgsBs msgsFds) = runPut $ putMsg msgA >> putMsg msgB
+        lfA = testMsgLookup msgA
+        lfB = testMsgLookup msgB
+        fds = msgFds msgA ++ msgFds msgB
 
 -- | Verify that it's possible to close a socket that's "running" accept.
 prop_closeWhileAccept :: Property

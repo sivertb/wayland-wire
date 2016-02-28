@@ -1,5 +1,5 @@
 module Graphics.Wayland.Wire.Socket
-    ( Socket
+    ( Socket (..)
     -- * Sending and receiving data
     , recv
     , send
@@ -8,6 +8,8 @@ module Graphics.Wayland.Wire.Socket
     , listen
     , close
     , accept
+    -- * Interal functions
+    , fdsToBs
     )
 where
 
@@ -119,18 +121,15 @@ close sock = withSocket sock $ \s -> do
 -- interruptible and can be interrupted even with exceptions masked, but
 -- everything else is safe from asynchronous exceptions.
 recvLoop :: MessageLookup -> S.Socket -> Raw -> IO (Raw, Either SomeException Message)
-recvLoop lf sock oldInp = do
-    res <- (Right <$> recvMsg sock 4096) `catch` (return . Left)
-    case res of
-      Left  err          -> return (oldInp, Left err)
-      Right (msg, cmsgs) -> do
-          let newInp = Raw msg (concat $ mapMaybe fdData cmsgs)
-              inp    = oldInp <> newInp
-
-          case runIncremental (getMsg lf) `pushInput` inp of
-            Done left _ a -> return (left, Right a)
-            Fail _    _ e -> return (inp , Left . SomeException $ userError e)
-            _             -> recvLoop lf sock inp
+recvLoop lf sock inp =
+    case runIncremental (getMsg lf) `pushInput` inp of
+      Done left _ a -> return (left, Right a)
+      Fail _    _ e -> return (inp , Left . SomeException $ userError e)
+      _             -> do
+          res <- (Right <$> recvMsg sock 4096) `catch` (return . Left)
+          case res of
+            Left err           -> return (inp, Left err)
+            Right (msg, cmsgs) -> recvLoop lf sock (inp <> Raw msg (concat $ mapMaybe fdData cmsgs))
 
 -- | Receives a message from the socket.
 recv :: MessageLookup -> Socket -> IO Message
