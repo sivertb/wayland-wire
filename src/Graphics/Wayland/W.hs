@@ -14,7 +14,6 @@ calls to Wayland objects.
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE StandaloneDeriving #-}
 module Graphics.Wayland.W
     ( W
     , ObjectError (..)
@@ -23,12 +22,15 @@ module Graphics.Wayland.W
     , ObjectManager
     , newObjectManager
     , messageLookup
+    , lookupInterface
+    , getObjects
     , runW
     , AllocLimits ()
     )
 where
 
 import Control.Applicative
+import Control.Arrow
 import Control.Monad.Except
 import Control.Monad.State
 import qualified Data.Set.Diet as D
@@ -61,7 +63,7 @@ data ObjectError =
 
 -- | Keeps track of objects and their handlers.
 data ObjectManager c m =
-    ObjectManager { regObjs  :: M.Map ObjId (OpCode -> Maybe [Type], Message -> W c m ())
+    ObjectManager { regObjs  :: M.Map ObjId (OpCode -> Maybe [Type], Message -> W c m (), Interface)
                   , freeObjs :: D.Diet ObjId
                   }
 
@@ -82,7 +84,15 @@ newObjectManager =
 -- | Returns a function that can look up the correct handler given an object
 -- and an opcode.
 messageLookup :: ObjectManager c m -> MessageLookup
-messageLookup objMgr obj op = M.lookup obj (regObjs objMgr) >>= ($ op) . fst
+messageLookup objMgr obj op = M.lookup obj (regObjs objMgr) >>= ($ op) . (\(a, _, _) -> a)
+
+-- | Finds the 'Interface' of an 'ObjId', or 'Nothing' if the object does not exist.
+lookupInterface :: ObjId -> ObjectManager c m -> Maybe Interface
+lookupInterface obj = fmap (\(_, _, i) -> i) . M.lookup obj . regObjs
+
+-- | Returns a list of all the objects and their 'Interface'.
+getObjects :: ObjectManager c m -> [(ObjId, Interface)]
+getObjects = map (second (\(_, _, i) -> i)) . M.toList . regObjs
 
 type WC = W Client
 type WS = W Server
@@ -98,7 +108,7 @@ newtype W c m a = W { runW' :: ExceptT ObjectError (StateT (ObjectManager c m) m
     )
 
 runW :: W c m a -> ObjectManager c m -> m (Either ObjectError a, ObjectManager c m)
-runW w mgr = runStateT (runExceptT (runW' w)) mgr
+runW w = runStateT (runExceptT (runW' w))
 
 instance MonadTrans (W c) where
     lift = W . lift . lift
@@ -121,7 +131,17 @@ instance (Functor m, Monad m, MonadSend m) => MonadObject c (W c m) where
     registerObject obj slots = do
         exists <- gets (M.member (unObject obj) . regObjs)
         when exists . throwError . ErrUser $ "Trying to register " ++ show obj ++ " which already exists"
-        modify (\s -> s { regObjs = M.insert (unObject obj) (slotTypes slots, dispatch slots) (regObjs s) })
+        modify (\s -> s
+               { regObjs = M.insert
+               (unObject obj)
+               ( slotTypes slots
+               , dispatch slots
+               , interfaceInfo $ objInterface obj)
+               (regObjs s)
+               })
+        where
+            objInterface :: Object c i -> i
+            objInterface = undefined
 
     unregisterObject obj = do
         exists <- gets (M.member (unObject obj) . regObjs)
@@ -129,7 +149,7 @@ instance (Functor m, Monad m, MonadSend m) => MonadObject c (W c m) where
         modify (\s -> s { regObjs = M.delete (unObject obj) (regObjs s) })
 
     dispatchMessage msg = do
-        handler <- gets (fmap snd . M.lookup (msgObj msg) . regObjs)
+        handler <- gets (fmap (\(_, h, _) -> h) . M.lookup (msgObj msg) . regObjs)
         case handler of
              Nothing -> throwError . ErrObject $ msgObj msg
              Just h  -> h msg

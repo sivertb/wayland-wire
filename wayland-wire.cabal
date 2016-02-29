@@ -22,6 +22,7 @@ library
   other-modules:        Graphics.Wayland.TH
                         Graphics.Wayland.Wire.Message
                         Graphics.Wayland.Wire.Socket
+                        Graphics.Wayland.Wire.Debug
                         Graphics.Wayland.Wire.Decoder
                         Graphics.Wayland.Wire.Get
                         Graphics.Wayland.Wire.Put

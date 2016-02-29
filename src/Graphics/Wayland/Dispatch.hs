@@ -12,7 +12,6 @@ Stability   : Experimental
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 module Graphics.Wayland.Dispatch
     ( Server
@@ -81,7 +80,7 @@ class Monad m => MonadObject c m | m -> c where
     -- | Frees an allocated object.
     freeObject :: Object c i -> m ()
     -- | Registers handlers for an object's slots.
-    registerObject :: Dispatchable c i => Object c i -> Slots c i m -> m ()
+    registerObject :: (DispatchInterface i, Dispatchable c i) => Object c i -> Slots c i m -> m ()
     -- | Unregisters the handlers of an object.
     unregisterObject :: Dispatchable c i => Object c i -> m ()
     -- | Dispatches a message to the correct object and slot.
@@ -118,7 +117,7 @@ consVer :: DispatchInterface i => SignalConstructor c i m -> Word32
 consVer = interfaceVersion . consInterface
 
 -- | Creates a new object, using the given constructor.
-newObject :: (Dispatchable c i, MonadObject c m)
+newObject :: (DispatchInterface i, Dispatchable c i, MonadObject c m)
           => SignalConstructor c i m -- ^ The object constructor.
           -> m (NewId, Object c i)   -- ^ The new object and its Id
 newObject f = do
@@ -128,11 +127,11 @@ newObject f = do
     return (n, o)
 
 -- | Creates a new object if a constructor is given.
-maybeNewObject :: (Dispatchable c i, MonadObject c m)
-          => Maybe (SignalConstructor c i m)
-          -> m (Maybe NewId, Maybe (Object c i))   -- ^ The new object and its Id
+maybeNewObject :: (DispatchInterface i, Dispatchable c i, MonadObject c m)
+               => Maybe (SignalConstructor c i m)
+               -> m (Maybe NewId, Maybe (Object c i))   -- ^ The new object and its Id
 maybeNewObject Nothing     = return (Nothing, Nothing)
-maybeNewObject (Just cons) = liftM (Just *** Just) (newObject cons)
+maybeNewObject (Just cons) = fmap (Just *** Just) (newObject cons)
 
 -- | Registers a new 'Object' using the given constructor.
 regObject :: MonadObject c m

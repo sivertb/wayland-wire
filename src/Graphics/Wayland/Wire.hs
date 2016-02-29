@@ -33,9 +33,13 @@ module Graphics.Wayland.Wire
     , Encodable
     , Decodable
     , ArgType
+    -- * Debug
+    , MessageType (..)
+    , ppMsg
     )
 where
 
+import Graphics.Wayland.Wire.Debug
 import Graphics.Wayland.Wire.Encode
 import Graphics.Wayland.Wire.Message
 import Graphics.Wayland.Wire.Socket
