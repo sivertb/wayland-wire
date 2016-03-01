@@ -1,55 +1,38 @@
 {-|
 Module      : Graphics.Wayland.W
-Description : A transformer monad implementing the 'MonadDispatch' class.
+Description : A transformer monad implementing 'MonadSend' and 'MonadObject'.
 Copyright   : (C) Sivert Berg, 2014-2015
 License     : GPL3
 Maintainer  : code@trev.is
 Stability   : Experimental
 
-A transformer monad that can be used to add support for calling and receiving
-calls to Wayland objects.
+A simple transformer monad that can be used to add support for calling and
+receiving calls to Wayland objects.
 -}
 
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+
 module Graphics.Wayland.W
-    ( W
-    , ObjectError (..)
-    , WC
+    ( WC
     , WS
-    , ObjectManager
-    , newObjectManager
-    , messageLookup
-    , lookupInterface
-    , getObjects
+    , W
     , runW
-    , AllocLimits ()
+    , ObjectError (..)
     )
 where
 
-import Control.Applicative
-import Control.Arrow
 import Control.Monad.Except
 import Control.Monad.State
-import qualified Data.Set.Diet as D
-import qualified Data.Map as M
 import Graphics.Wayland.Dispatch
-import Graphics.Wayland.Protocol
+import Graphics.Wayland.ObjectManager
 import Graphics.Wayland.Types
-import Graphics.Wayland.Wire
-import Prelude
+import Graphics.Wayland.Wire.Message
 
--- | A class used for finding the minimum and maximum allowed object ID.
-class AllocLimits c where
-    allocLimits :: c -> D.Interval ObjId
-
-instance AllocLimits Server where
-    allocLimits _ = D.Interval 0xff000000 0xffffffff
-
-instance AllocLimits Client where
-    allocLimits _ = D.Interval 0x00000001 0xfeffffff
+type WC = W Client
+type WS = W Server
 
 -- | The different errors.
 data ObjectError =
@@ -61,45 +44,9 @@ data ObjectError =
   | ErrUser   String
   deriving (Eq, Show)
 
--- | Keeps track of objects and their handlers.
-data ObjectManager c m =
-    ObjectManager { regObjs  :: M.Map ObjId (OpCode -> Maybe [Type], Message -> W c m (), Interface)
-                  , freeObjs :: D.Diet ObjId
-                  }
-
--- | Returns a new 'ObjectManager'.
-newObjectManager :: AllocLimits c => ObjectManager c m
-newObjectManager =
-    let mgr = ObjectManager { regObjs  = M.empty
-                            , freeObjs = D.singletonI (interval mgr)
-                            }
-    in mgr
-    where
-        interval :: AllocLimits c => ObjectManager c m -> D.Interval ObjId
-        interval mgr = allocLimits (c mgr)
-
-        c :: ObjectManager c m -> c
-        c = undefined
-
--- | Returns a function that can look up the correct handler given an object
--- and an opcode.
-messageLookup :: ObjectManager c m -> MessageLookup
-messageLookup objMgr obj op = M.lookup obj (regObjs objMgr) >>= ($ op) . (\(a, _, _) -> a)
-
--- | Finds the 'Interface' of an 'ObjId', or 'Nothing' if the object does not exist.
-lookupInterface :: ObjId -> ObjectManager c m -> Maybe Interface
-lookupInterface obj = fmap (\(_, _, i) -> i) . M.lookup obj . regObjs
-
--- | Returns a list of all the objects and their 'Interface'.
-getObjects :: ObjectManager c m -> [(ObjId, Interface)]
-getObjects = map (second (\(_, _, i) -> i)) . M.toList . regObjs
-
-type WC = W Client
-type WS = W Server
-
-newtype W c m a = W { runW' :: ExceptT ObjectError (StateT (ObjectManager c m) m) a }
+newtype W c m a = W { runW' :: ExceptT ObjectError (StateT (ObjectManager c (W c m)) m) a }
     deriving
-    ( MonadState (ObjectManager c m)
+    ( MonadState (ObjectManager c (W c m))
     , MonadError ObjectError
     , Monad
     , MonadIO
@@ -107,7 +54,7 @@ newtype W c m a = W { runW' :: ExceptT ObjectError (StateT (ObjectManager c m) m
     , Applicative
     )
 
-runW :: W c m a -> ObjectManager c m -> m (Either ObjectError a, ObjectManager c m)
+runW :: W c m a -> ObjectManager c (W c m) -> m (Either ObjectError a, ObjectManager c (W c m))
 runW w = runStateT (runExceptT (runW' w))
 
 instance MonadTrans (W c) where
@@ -118,38 +65,15 @@ instance (Monad m, MonadSend m) => MonadSend (W c m) where
 
 instance (Functor m, Monad m, MonadSend m) => MonadObject c (W c m) where
     allocObject = do
-        mv <- gets (D.minView . freeObjs)
+        mv <- gets alloc
         case mv of
-             Nothing           -> throwError $ ErrUser "No more free IDs!"
-             Just (a, newObjs) -> newFromObj a <$ modify (\s -> s { freeObjs = newObjs })
+             Nothing       -> throwError $ ErrUser "No more free IDs!"
+             Just (a, mgr) -> a <$ put mgr
 
-    freeObject (Object objId) = do
-        alreadyFree <- D.member objId <$> gets freeObjs
-        when alreadyFree . throwError $ ErrUser "Trying to free an ID that's already free"
-        modify (\s -> s { freeObjs = D.insert objId (freeObjs s) } )
-
-    registerObject obj slots = do
-        exists <- gets (M.member (unObject obj) . regObjs)
-        when exists . throwError . ErrUser $ "Trying to register " ++ show obj ++ " which already exists"
-        modify (\s -> s
-               { regObjs = M.insert
-               (unObject obj)
-               ( slotTypes slots
-               , dispatch slots
-               , interfaceInfo $ objInterface obj)
-               (regObjs s)
-               })
-        where
-            objInterface :: Object c i -> i
-            objInterface = undefined
-
-    unregisterObject obj = do
-        exists <- gets (M.member (unObject obj) . regObjs)
-        unless exists . throwError . ErrUser $ "Trying to unregister " ++ show obj ++ " that does not exist"
-        modify (\s -> s { regObjs = M.delete (unObject obj) (regObjs s) })
+    registerObject obj slots = modify (insert obj slots)
 
     dispatchMessage msg = do
-        handler <- gets (fmap (\(_, h, _) -> h) . M.lookup (msgObj msg) . regObjs)
+        handler <- gets (lookupHandler $ msgObj msg)
         case handler of
              Nothing -> throwError . ErrObject $ msgObj msg
              Just h  -> h msg

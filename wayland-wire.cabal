@@ -14,6 +14,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:      Graphics.Wayland
+                        Graphics.Wayland.ObjectManager
                         Graphics.Wayland.Protocol
                         Graphics.Wayland.Types
                         Graphics.Wayland.Dispatch

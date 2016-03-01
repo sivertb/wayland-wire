@@ -77,12 +77,8 @@ class Dispatchable c i where
 class Monad m => MonadObject c m | m -> c where
     -- | Allocates a new object, but does not add any handlers to it.
     allocObject :: m NewId
-    -- | Frees an allocated object.
-    freeObject :: Object c i -> m ()
     -- | Registers handlers for an object's slots.
     registerObject :: (DispatchInterface i, Dispatchable c i) => Object c i -> Slots c i m -> m ()
-    -- | Unregisters the handlers of an object.
-    unregisterObject :: Dispatchable c i => Object c i -> m ()
     -- | Dispatches a message to the correct object and slot.
     --
     -- If the object or slot does not exist it will signal an error using

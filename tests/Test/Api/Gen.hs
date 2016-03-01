@@ -21,6 +21,7 @@ import Data.List
 import qualified Graphics.Wayland.Protocol as P
 import Graphics.Wayland.TH
 import Graphics.Wayland.Dispatch
+import Graphics.Wayland.ObjectManager
 import Graphics.Wayland.W
 import Graphics.Wayland.Wire
 import qualified Test.Api.Client as C
@@ -52,11 +53,11 @@ runTestF free =
 
 -- | Runs a test using two W computations.
 runTest :: (AllocLimits ma, AllocLimits mb, Eq b, Show b)
-        => ObjectManager ma (FT b)
-        -> ObjectManager mb (FT b)
+        => ObjectManager ma (W ma (FT b))
+        -> ObjectManager mb (W mb (FT b))
         -> (Message -> W ma (FT b) x)
         -> W mb (FT b) y
-        -> (ObjectManager ma (FT b), ObjectManager mb (FT b), x, y, [b], [b])
+        -> (ObjectManager ma (W ma (FT b)), ObjectManager mb (W mb (FT b)), x, y, [b], [b])
 runTest mgrA mgrB server client =
     let ((Right rc, mgrB'), resClient, [msg]) = runTestF $ runW client mgrB
         ((Right rs, mgrA'), resServer, []   ) = runTestF $ runW (server msg) mgrA

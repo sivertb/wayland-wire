@@ -11,6 +11,7 @@ Main module that pulls in all other required modules.
 module Graphics.Wayland
     (
       module Graphics.Wayland.Dispatch
+    , module Graphics.Wayland.ObjectManager
     , module Graphics.Wayland.Protocol
     , module Graphics.Wayland.Types
     , module Graphics.Wayland.Wire
@@ -23,6 +24,7 @@ module Graphics.Wayland
 where
 
 import Graphics.Wayland.Dispatch
+import Graphics.Wayland.ObjectManager
 import Graphics.Wayland.Protocol
 import Graphics.Wayland.TH
 import Graphics.Wayland.Types

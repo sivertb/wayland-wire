@@ -11,6 +11,7 @@ import Control.Monad
 import Control.Monad.Trans
 import Data.Word
 import Graphics.Wayland.Dispatch
+import Graphics.Wayland.ObjectManager
 import Graphics.Wayland.Types
 import Graphics.Wayland.W
 import Prelude
