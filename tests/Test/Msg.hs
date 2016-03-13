@@ -8,6 +8,7 @@ import Control.Exception
 import qualified Data.ByteString as BS
 import Network.Socket
 import Network.Socket.Msg
+import System.IO.Error
 import System.Posix.Files
 import Test.Arbitrary ()
 import Test.QuickCheck
@@ -40,6 +41,23 @@ prop_sendRecv bs =
         stop (bs' === bs .&&. [] === cmsgs')
     where
         bufSize = 4096
+
+-- | Check that calling 'recvMsg' on a closed socket throws an exception.
+prop_eof :: BS.ByteString -> Property
+prop_eof bs =
+    BS.length bs <= bufSize && not (BS.null bs) ==> monadicIO $ do
+        ((bs', cmsgs'), err) <- run . withSockets $ \(sockA, sockB) -> do
+            sendMsg sockA bs []
+            msg <- recvMsg sockB bufSize
+            close sockA
+            err <- catch (Right <$> recvMsg sockB bufSize) (return . Left)
+            return (msg, err)
+        stop (bs' === bs
+             .&&. [] === cmsgs'
+             .&&. counterexample (show err) (either isEOFError (const False) err))
+    where
+        bufSize = 4096
+
 
 return []
 msgTests :: IO Bool

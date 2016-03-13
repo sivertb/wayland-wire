@@ -12,6 +12,7 @@ import Foreign hiding (void)
 import Foreign.C
 import Network.Socket
 import Network.Socket.Internal
+import System.IO.Error
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -172,4 +173,9 @@ recvMsg s bufSize = allocaMsg bufSize $ \ptr cstr -> do
     len            <- throwSocketErrorWaitRead s "recvMsg" $ c_recvmsg s ptr 0
     cmsgs          <- peekCMsgs ptr (cmsgFirsthdr ptr)
     bs             <- BS.packCStringLen (cstr, fromIntegral len)
+
+    when (BS.null bs && bufSize > 0)
+        . ioError
+        $ mkIOError eofErrorType "Network.Socket.Msg.recvMsg" Nothing Nothing
+
     return (bs, cmsgs)
