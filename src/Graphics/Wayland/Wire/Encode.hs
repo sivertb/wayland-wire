@@ -11,7 +11,6 @@ module Graphics.Wayland.Wire.Encode
     )
 where
 
-import Control.Monad
 import Data.Int
 import Data.Word
 import Data.Monoid
@@ -34,7 +33,7 @@ instance (ArgType a, Encodable b) => Encodable (a -> b) where
 instance Monad m => Decodable (m a) a m where
     decode args err m =
         case (args, err) of
-             ([], Nothing) -> liftM Right m
+             ([], Nothing) -> fmap Right m
              (_ , Nothing) -> return $ Left "Too many arguments"
              (_ , Just e ) -> return $ Left e
 
@@ -118,5 +117,5 @@ instance ArgType [Word32] where
 toMessage :: Encodable a => OpCode -> ObjId -> a
 toMessage op obj = encode op obj []
 
-fromMessage :: (Monad m, Decodable a b m) => Message -> a -> m (Either String b)
+fromMessage :: Decodable a b m => Message -> a -> m (Either String b)
 fromMessage msg = decode (msgArgs msg) Nothing

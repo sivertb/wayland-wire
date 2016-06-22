@@ -74,9 +74,18 @@ intE = litE . integerL . fromIntegral
 intP :: Integral i => i -> Q Pat
 intP = litP . IntegerL . fromIntegral
 
+-- | Wrapper around 'dataD' to abstract away any version differences.
+dataD' :: Name -> [ConQ] -> [Name] -> DecQ
+dataD' name cons derived =
+#if MIN_VERSION_template_haskell(2,11,0)
+    dataD (cxt []) name [] Nothing cons (mapM conT derived)
+#else
+    dataD (cxt []) name [] cons derived
+#endif
+
 -- | Generates an empty type declaration with the given name.
 genEmptyType :: Name -> Q [Dec]
-genEmptyType name = return [ DataD [] name [] [] [] ]
+genEmptyType name = (:[]) <$> dataD' name [] []
 
 -- | Generates a class instance for 'DispatchInterface' for the given 'Interface'.
 genDispatchInterfaceInst :: Interface -> Q [Dec]
@@ -252,7 +261,11 @@ genRecord :: RecordType             -- ^ The record type to generate.
           -> Interface              -- ^ The interface this record belongs to.
           -> Q Dec
 genRecord rt s args iface =
+#if MIN_VERSION_template_haskell(2,11,0)
+    dataInstD (pure []) (recordTypeName rt) types Nothing [con] (cxt [])
+#else
     dataInstD (pure []) (recordTypeName rt) types [con] []
+#endif
     where
         con            = recC conName $ map mkField args
         conName        = mkNameU $ ifaceName iface ++ show rt
@@ -261,7 +274,13 @@ genRecord rt s args iface =
                          , conT typeName
                          , varT $ mkName "m"
                          ]
-        mkField (n, t) = (fieldName iface n, NotStrict, ) <$> genFuncType iface rt s t
+        mkField (n, t) = (fieldName iface n, nonStrict, ) <$> genFuncType iface rt s t
+
+#if MIN_VERSION_template_haskell(2,11,0)
+        nonStrict      = Bang NoSourceUnpackedness NoSourceStrictness
+#else
+        nonStrict      = NotStrict
+#endif
 
 -- | Returns the slots of an interface.
 getSlots :: Side -> Interface -> [(String, [P.Type])]
@@ -477,9 +496,9 @@ genBitfield iface en
 
 -- | Generates code for a single enum.
 genEnum :: Interface -> Enum' -> Q [Dec]
-genEnum iface en = do
+genEnum iface en =
     (\a b c -> [a, b] ++ c)
-    <$> dataD (cxt []) datName [] (map (\v -> normalC (valName v) []) (enumValues en)) [''Show, ''Eq, ''Ord, ''Enum, ''Bounded]
+    <$> dataD' datName (map (\v -> normalC (valName v) []) (enumValues en)) [''Show, ''Eq, ''Ord, ''Enum, ''Bounded]
     <*> instanceD (cxt []) [t| WireEnum $(conT datName) |]
         [ caseD 'fromWord32
         $  map (\(val, name) -> match (intP val) (normalB [| Just $(conE name) |]) []) vals

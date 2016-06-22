@@ -82,7 +82,7 @@ toBitfield :: Ord a => [a] -> Bitfield a
 toBitfield = Bitfield . S.fromList
 
 -- | Converts from a 'Bitfield' into the individual bits.
-fromBitfield :: Ord a => Bitfield a -> [a]
+fromBitfield :: Bitfield a -> [a]
 fromBitfield = S.toList . unBitfield
 
 -- | Converts an 'ObjId' to a 'NewId'.
